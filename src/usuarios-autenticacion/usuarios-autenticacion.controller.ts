@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, ParseIntPipe } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
@@ -8,27 +8,28 @@ import { UpdateUsuariosAutenticacionDto } from './dto/update-usuarios-autenticac
 export class UsuariosAutenticacionController {
   constructor(private readonly usuariosAutenticacionService: UsuariosAutenticacionService) {}
 
-  @MessagePattern('createUsuariosAutenticacion')
+  //HAY UN PAGINATION DTO EN COMMON, ES IMPORTANTE USARLO, REVISAR REPO 
+  @MessagePattern({cmd:'createUsuariosAutenticacion'})
   create(@Payload() createUsuariosAutenticacionDto: CreateUsuariosAutenticacionDto) {
     return this.usuariosAutenticacionService.create(createUsuariosAutenticacionDto);
   }
 
-  @MessagePattern('findAllUsuariosAutenticacion')
+  @MessagePattern({cmd:'findAllUsuariosAutenticacion'})
   findAll() {
     return this.usuariosAutenticacionService.findAll();
   }
 
-  @MessagePattern('findOneUsuariosAutenticacion')
-  findOne(@Payload() id: number) {
+  @MessagePattern({cmd:'findOneUsuariosAutenticacion'})
+  findOne(@Payload('id', ParseIntPipe) id: number) {
     return this.usuariosAutenticacionService.findOne(id);
   }
 
-  @MessagePattern('updateUsuariosAutenticacion')
+  @MessagePattern({cmd:'updateUsuariosAutenticacion'})
   update(@Payload() updateUsuariosAutenticacionDto: UpdateUsuariosAutenticacionDto) {
     return this.usuariosAutenticacionService.update(updateUsuariosAutenticacionDto.id, updateUsuariosAutenticacionDto);
   }
 
-  @MessagePattern('removeUsuariosAutenticacion')
+  @MessagePattern({cmd:'removeUsuariosAutenticacion'})
   remove(@Payload() id: number) {
     return this.usuariosAutenticacionService.remove(id);
   }
