@@ -3,6 +3,9 @@ import { AppModule } from './app.module';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { envs } from './config';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 async function bootstrap() {
   const logger = new Logger('Usuarios-Auth-MS')
