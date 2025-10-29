@@ -2,6 +2,7 @@ import { Inject, Injectable, HttpStatus } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
+import { loginUsuarioDto } from './dto/login-usuario.dto';
 
 @Injectable()
 export class UsuariosAutenticacionService {
@@ -10,36 +11,111 @@ export class UsuariosAutenticacionService {
   ) {}
 
   /**
-   * Crea un nuevo usuario en la tabla USUARIO.
-   * Lanza RpcException si ocurre algún error durante la inserción.
+   * Realiza  el registro en auth.user, tabla de Supabase para manejar autenticación.
+   * Luego crea el perfil del usuario en la tabla PERFIL.
+   *
+   * @param dto Datos necesarios para el registro del usuario.
+   * @returns Un objeto con el estado y mensaje del registro.
+   * Al ocurrir un error, se envía la excepción a través de RcpException.
    */
-  async create(dto: CreateUsuariosAutenticacionDto) {
+
+  async signUp(dto: CreateUsuariosAutenticacionDto) {
     try {
-      const { nombre, edad, status, correo, contrasenia, rol, contrasenias } = dto;
+      const { data, error } = await this.supabase.auth.signUp({
+        email: dto.correo,
+        password: dto.contrasenia,
+      });
+
+      if (error) {
+        throw new RpcException({
+          code: HttpStatus.BAD_REQUEST,
+          message: `Error al registrar usuario: ${error.message}`,
+        });
+      }
+
+      const userId = data?.user?.id;
+      if (!userId) {
+        throw new RpcException({
+          code: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: 'No se obtuvo el ID del usuario al registrarlo',
+        });
+      }
+
+      await this.crearPerfil(dto, userId);
+      return {
+        ok: true,
+        message: 'Usuario registrado y perfil creado correctamente',
+        userId,
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        code: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al registrar el usuario',
+      });
+    }
+  }
+
+  /*
+
+  Función auxiliar para crear el perfil del usuario en la tabla PERFIL
+
+ */
+
+  async crearPerfil(dto: CreateUsuariosAutenticacionDto, idUsuario: string) {
+    try {
+      const { nombre, edad, status, correo, rol } = dto;
 
       const { data, error } = await this.supabase
-        .from('USUARIO')
-        .insert([{ nombre, edad, status, correo, contrasenia, rol, contrasenias }])
+        .from('PERFIL')
+        .insert([{ idUsuario, nombre, edad, status, correo, rol }])
         .select();
 
       if (error) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: `Error al crear usuario: ${error.message}`,
+          message: `Error al crear perfil: ${error.message}`,
         });
       }
 
       return {
-        status: 'success',
-        message: 'Usuario creado correctamente',
-        usuario: data[0],
+        ok: true,
+        message: 'Perfil creado correctamente',
+        perfil: data[0],
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
 
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al crear el usuario',
+        message: error.message || 'Error interno al crear el perfil',
+      });
+    }
+  }
+
+  /* 
+    Función para iniciar sesión de usuario, usando Supabase Auth
+  */
+  async login(dto: loginUsuarioDto) {
+    try {
+      const { email, password } = dto;
+      const { data, error } = await this.supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      return {
+        ok: true,
+        access_token: data.session?.access_token,
+        expires_in: data.session?.expires_in,
+        user_id: data.user?.id,
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al crear el perfil',
       });
     }
   }
@@ -49,9 +125,7 @@ export class UsuariosAutenticacionService {
    */
   async findAll() {
     try {
-      const { data, error } = await this.supabase
-        .from('USUARIO')
-        .select('*');
+      const { data, error } = await this.supabase.from('USUARIO').select('*');
 
       if (error) {
         throw new RpcException({
@@ -74,35 +148,5 @@ export class UsuariosAutenticacionService {
       });
     }
   }
+  async findUserById(id: string) {}
 }
-
-
-  
-
-
-/* import { Injectable } from '@nestjs/common';
-import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
-import { UpdateUsuariosAutenticacionDto } from './dto/update-usuarios-autenticacion.dto';
-
-@Injectable()
-export class UsuariosAutenticacionService {
-  create(createUsuariosAutenticacionDto: CreateUsuariosAutenticacionDto) {
-    return 'This action adds a new usuariosAutenticacion';
-  }
-
-  findAll() {
-    return `This action returns all usuariosAutenticacion`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} usuariosAutenticacion`;
-  }
-
-  update(id: number, updateUsuariosAutenticacionDto: UpdateUsuariosAutenticacionDto) {
-    return `This action updates a #${id} usuariosAutenticacion`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} usuariosAutenticacion`;
-  }
-} */
