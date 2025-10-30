@@ -148,5 +148,57 @@ export class UsuariosAutenticacionService {
       });
     }
   }
-  async findUserById(id: string) {}
+  async findUserById(id: string) {
+    try {
+      const { data, error } = await this.supabase.from('USUARIO').select('*').eq('idUsuario', id);
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al buscar usuario: ${error.message}`,
+        });
+      }
+
+      return {
+        status: 'success',
+        message: 'Usuario encontrados correctamente',
+        usuarios: data,
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al consultar los usuarios',
+      });
+    }
+  }
+ async deleteUser(id: string) {
+  try {
+    // Elimina el usuario de Supabase Auth - REVISAR RLS
+    const { error } = await this.supabase.auth.admin.deleteUser(id);
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al eliminar usuario: ${error.message}`,
+      });
+    }
+
+    await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
+
+    return {
+      ok: true,
+      message: 'Usuario eliminado correctamente.',
+    };
+  } catch (error) {
+    if (error instanceof RpcException) throw error;
+
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: error.message || 'Error interno al eliminar usuario',
+    });
+  }
+}
+
 }

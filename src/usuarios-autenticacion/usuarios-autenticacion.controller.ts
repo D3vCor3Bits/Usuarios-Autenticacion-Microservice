@@ -31,6 +31,11 @@ export class UsuariosAutenticacionController {
   }
 
 
+  @MessagePattern({ cmd : 'deleteUser'})
+  borrar(@Payload() id: string){
+    return this.usuariosService.deleteUser(id);
+  }
+
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);
