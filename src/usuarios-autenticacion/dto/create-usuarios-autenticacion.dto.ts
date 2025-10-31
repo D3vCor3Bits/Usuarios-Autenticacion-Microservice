@@ -22,8 +22,4 @@ export class CreateUsuariosAutenticacionDto {
   @IsString({ message: 'El rol debe ser una cadena de texto.' })
   @IsOptional()
   rol?: string; 
-
-  @IsArray({ message: 'El historial de contraseñas debe ser un arreglo.' })
-  @IsOptional()
-  contrasenias?: string[];
 }
