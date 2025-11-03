@@ -205,12 +205,6 @@ export class UsuariosAutenticacionService {
           message: `Error al eliminar usuario: ${error.message}`,
         });
       }
-      if (error) {
-        throw new RpcException({
-          status: HttpStatus.BAD_REQUEST,
-          message: `Error al eliminar usuario: ${error.message}`,
-        });
-      }
 
         await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
 
