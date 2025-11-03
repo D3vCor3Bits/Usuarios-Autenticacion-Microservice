@@ -3,6 +3,8 @@ import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
 import { loginUsuarioDto } from './dto/login-usuario.dto';
+import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
+import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 
 @Controller()
@@ -36,6 +38,18 @@ export class UsuariosAutenticacionController {
   borrar(@Payload() id: string){
     return this.usuariosService.deleteUser(id);
   }
+
+  @MessagePattern({ cmd: 'asignarMedpaciente' })
+  asignarMedpaciente(@Payload() dto: asignarMedpacienteDto) {
+    return this.usuariosService.asignMedicToPatient(dto);
+  }
+
+  @MessagePattern({ cmd: 'asignarCuidadorPaciente' })
+  asignarCuidadorPaciente(@Payload() dto: asignarCuidadorPacienteDto) {
+    return this.usuariosService.asignCaregiverToPatient(dto);
+  }
+
+
 
 
   @MessagePattern({cmd : 'crearInvitacion'})

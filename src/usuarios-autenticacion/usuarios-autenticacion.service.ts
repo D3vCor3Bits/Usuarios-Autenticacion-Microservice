@@ -3,6 +3,8 @@ import { RpcException } from '@nestjs/microservices';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
 import { loginUsuarioDto } from './dto/login-usuario.dto';
+import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
+import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
@@ -153,9 +155,18 @@ export class UsuariosAutenticacionService {
       });
     }
   }
+
+  /* 
+  
+  Encontrar perfil de usuario por ID.
+
+  */
   async findUserById(id: string) {
     try {
-      const { data, error } = await this.supabase.from('USUARIO').select('*').eq('idUsuario', id);
+      const { data, error } = await this.supabase
+        .from('PERFIL')
+        .select('*')
+        .eq('idUsuario', id);
 
       if (error) {
         throw new RpcException({
@@ -178,10 +189,15 @@ export class UsuariosAutenticacionService {
       });
     }
   }
-  async deleteUser(id: string) {
-    try {
-      // Elimina el usuario de Supabase Auth - REVISAR RLS
-      const { error } = await this.supabase.auth.admin.deleteUser(id);
+  /*
+
+  Borrar un usuario con funciones de administrador.
+
+  */
+   async deleteUser(id: string) {
+      try {
+        // Elimina el usuario de Supabase Auth - REVISAR RLS
+        const { error } = await this.supabase.auth.admin.deleteUser(id);
 
       if (error) {
         throw new RpcException({
@@ -189,22 +205,28 @@ export class UsuariosAutenticacionService {
           message: `Error al eliminar usuario: ${error.message}`,
         });
       }
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al eliminar usuario: ${error.message}`,
+        });
+      }
 
-      await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
+        await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
 
-      return {
-        ok: true,
-        message: 'Usuario eliminado correctamente.',
-      };
-    } catch (error) {
-      if (error instanceof RpcException) throw error;
+        return {
+          ok: true,
+          message: 'Usuario eliminado correctamente.',
+        };
+      } catch (error) {
+        if (error instanceof RpcException) throw error;
 
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al eliminar usuario',
-      });
+        throw new RpcException({
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: error.message || 'Error interno al eliminar usuario',
+        });
+      }
     }
-  }
   /**
  * Crea una invitación y notifica al microservicio correspondiente.
  *
@@ -264,4 +286,175 @@ export class UsuariosAutenticacionService {
     }
   }
 
+  /* 
+  
+  
+  Asignar un médico a un paciente.
+  */
+  async asignMedicToPatient(dto: asignarMedpacienteDto) {
+    const { idMedico, idPaciente } = dto;
+    const { data: rolMedData, error: errorMed } = await this.supabase
+      .from('PERFIL')
+      .select('rol')
+      .eq('idUsuario', idMedico)
+      .single();
+
+    const { data: rolPacData, error: errorPac } = await this.supabase
+      .from('PERFIL')
+      .select('rol')
+      .eq('idUsuario', idPaciente)
+      .single();
+
+    if (errorMed || !rolMedData) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `No se encontró el perfil del médico con id ${idMedico}.`,
+      });
+    }
+
+    if (errorPac || !rolPacData) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `No se encontró el perfil del paciente con id ${idPaciente}.`,
+      });
+    }
+
+    if (rolMedData.rol !== 'medico') {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El usuario con id ${idMedico} no tiene rol de médico.`,
+      });
+    }
+
+    if (rolPacData.rol !== 'paciente') {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El usuario con id ${idPaciente} no tiene rol de paciente.`,
+      });
+    }
+
+    try {
+      const { data, error } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .insert([{ idMedico, idPaciente }])
+        .select();
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al asignar el paciente al médico: ${error.message}`,
+        });
+      }
+
+      return {
+        ok: true,
+        message: 'Paciente signado al médico correctamente',
+        asignacion: data[0],
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al crear el perfil',
+      });
+    }
+  }
+
+  /* 
+  
+  Asignar un cuidador a un paciente.
+  
+  */
+  async asignCaregiverToPatient(dto: asignarCuidadorPacienteDto) {
+    const { idCuidador, idPaciente } = dto;
+
+    // Verificación de roles
+    const { data: rolCuidData, error: errorCuid } = await this.supabase
+      .from('PERFIL')
+      .select('rol')
+      .eq('idUsuario', idCuidador)
+      .single();
+
+    const { data: rolPacData, error: errorPac } = await this.supabase
+      .from('PERFIL')
+      .select('rol')
+      .eq('idUsuario', idPaciente)
+      .single();
+
+    if (errorCuid || !rolCuidData) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `No se encontró el perfil del cuidador con id ${idCuidador}.`,
+      });
+    }
+
+    if (errorPac || !rolPacData) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `No se encontró el perfil del paciente con id ${idPaciente}.`,
+      });
+    }
+
+    if (rolCuidData.rol !== 'medico') {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El usuario con id ${idCuidador} no tiene rol de médico.`,
+      });
+    }
+
+    if (rolPacData.rol !== 'paciente') {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El usuario con id ${idPaciente} no tiene rol de paciente.`,
+      });
+    }
+
+    // Validación que el paciente no tenga más de 3 cuidadores
+    const { count, error: countError } = await this.supabase
+      .from('CUIDADOR_PACIENTE')
+      .select('*', { count: 'exact', head: true })
+      .eq('idPaciente', idPaciente);
+
+    if (countError) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error al contar los cuidadores del paciente: ${countError.message}`,
+      });
+    }
+
+    if (count != null && count >= 3) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El paciente con id ${idPaciente} ya tiene 3 cuidadores asignados.`,
+      });
+    }
+
+    // Inserción de la relación cuidador-paciente
+    try {
+      const { data, error } = await this.supabase
+        .from('CUIDADOR_PACIENTE')
+        .insert([{ idCuidador, idPaciente }])
+        .select();
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al asignar el paciente al cuidador: ${error.message}`,
+        });
+      }
+
+      return {
+        ok: true,
+        message: 'Paciente asignado al cuidador correctamente.',
+        asignacion: data[0],
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al crear la asignación.',
+      });
+    }
+  }
 }
