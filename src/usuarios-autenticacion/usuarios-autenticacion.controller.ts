@@ -3,6 +3,7 @@ import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
 import { loginUsuarioDto } from './dto/login-usuario.dto';
+import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 
 @Controller()
 export class UsuariosAutenticacionController {
@@ -36,6 +37,11 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.deleteUser(id);
   }
 
+
+  @MessagePattern({cmd : 'crearInvitacion'})
+  crearInv(@Payload() dto: crearInvitacionDto){
+    return this.usuariosService.crearInvitacion(dto);
+  }
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);
