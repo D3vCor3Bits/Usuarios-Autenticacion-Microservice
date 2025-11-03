@@ -5,6 +5,7 @@ import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticac
 import { loginUsuarioDto } from './dto/login-usuario.dto';
 import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
+import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 
 @Controller()
 export class UsuariosAutenticacionController {
@@ -50,6 +51,11 @@ export class UsuariosAutenticacionController {
 
 
 
+
+  @MessagePattern({cmd : 'crearInvitacion'})
+  crearInv(@Payload() dto: crearInvitacionDto){
+    return this.usuariosService.crearInvitacion(dto);
+  }
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);

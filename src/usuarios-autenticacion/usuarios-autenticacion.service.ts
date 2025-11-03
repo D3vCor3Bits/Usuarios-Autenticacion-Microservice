@@ -5,12 +5,17 @@ import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticac
 import { loginUsuarioDto } from './dto/login-usuario.dto';
 import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
+import { crearInvitacionDto } from './dto/crear-invitacion.dto';
+import { lastValueFrom } from 'rxjs';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class UsuariosAutenticacionService {
   constructor(
-    @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
-  ) {}
+    @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient, 
+    @Inject('ALERTAS_SERVICE') private readonly clientProxy: ClientProxy, 
+
+  ) { }
 
   /**
    * Realiza  el registro en auth.user, tabla de Supabase para manejar autenticación.
@@ -189,10 +194,10 @@ export class UsuariosAutenticacionService {
   Borrar un usuario con funciones de administrador.
 
   */
-  async deleteUser(id: string) {
-    try {
-      // Elimina el usuario de Supabase Auth - REVISAR RLS
-      const { error } = await this.supabase.auth.admin.deleteUser(id);
+   async deleteUser(id: string) {
+      try {
+        // Elimina el usuario de Supabase Auth - REVISAR RLS
+        const { error } = await this.supabase.auth.admin.deleteUser(id);
 
       if (error) {
         throw new RpcException({
@@ -201,18 +206,76 @@ export class UsuariosAutenticacionService {
         });
       }
 
-      await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
+        await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
+
+        return {
+          ok: true,
+          message: 'Usuario eliminado correctamente.',
+        };
+      } catch (error) {
+        if (error instanceof RpcException) throw error;
+
+        throw new RpcException({
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: error.message || 'Error interno al eliminar usuario',
+        });
+      }
+    }
+  /**
+ * Crea una invitación y notifica al microservicio correspondiente.
+ *
+ * Proceso:
+ * 1. Inserta una nueva invitación en la tabla `invitaciones` con los datos proporcionados.
+ * 2. Genera un token en formato Base64 a partir del `id` de la invitación creada.
+ * 3. Envía un evento al microservicio correspondiente con los datos requeridos.
+ *
+ * @param dto - Objeto con los datos de la invitación: nombreCompleto, correo y rol.
+ * @returns Un objeto con confirmación y los datos de la invitación creada.
+ * @throws RpcException - Si ocurre un error en la inserción o durante la emisión del evento.
+ */
+  async crearInvitacion(dto: crearInvitacionDto) {
+    try {
+      const { nombreCompleto, correo, rol } = dto;
+
+      // Inserta el registro en la tabla de invitaciones
+      const { data, error } = await this.supabase
+        .from('invitaciones')
+        .insert([{ correo, nombreCompleto }])
+        .select();
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al crear invitación: ${error.message}`,
+        });
+      }
+
+      const invitacion = data[0];
+
+      // Genera un token en Base64 a partir del ID de la invitación
+      const token = Buffer.from(String(invitacion.id)).toString('base64');
+
+      // Emite el evento al otro microservicio
+      await lastValueFrom(
+        this.clientProxy.emit('invitacion_creada', {
+          correo,
+          nombreCompleto,
+          token,
+          rol,
+        }),
+      );
 
       return {
         ok: true,
-        message: 'Usuario eliminado correctamente.',
+        message: 'Invitación creada correctamente',
+        invitacion,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
 
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al eliminar usuario',
+        message: error.message || 'Error interno al crear la invitación',
       });
     }
   }
