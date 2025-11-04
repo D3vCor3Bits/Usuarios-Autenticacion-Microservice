@@ -451,4 +451,27 @@ export class UsuariosAutenticacionService {
       });
     }
   }
+
+  async buscarPacienteCuidador(idCuidador: string){
+    try {
+      const {data: data , error: err} = await this.supabase.
+      from('CUIDADOR_PACIENTE')
+      .select('idPaciente')
+      .eq("idCuidador", idCuidador);
+
+      if(err){
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: "Algo sucedió buscando el id del paciente"
+        })
+      }
+
+      return data;
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message
+      })
+    }
+  }
 }
