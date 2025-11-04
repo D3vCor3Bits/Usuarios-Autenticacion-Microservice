@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, ParseUUIDPipe } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
@@ -29,7 +29,7 @@ export class UsuariosAutenticacionController {
   }
 
   @MessagePattern({ cmd : 'findUserById'})
-  buscar(@Payload() id : string){
+  buscar(@Payload('id', ParseUUIDPipe) id : string){
     return this.usuariosService.findUserById(id);
   }
 
