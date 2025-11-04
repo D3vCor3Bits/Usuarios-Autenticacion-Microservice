@@ -54,6 +54,11 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.buscarPacienteCuidador(idCuidador);
   }
 
+  @MessagePattern({cmd:'pacienteMedico'})
+  buscarMedicoPaciente(@Payload('idPaciente', ParseUUIDPipe) idPaciente: string){
+    return this.usuariosService.buscarMedicoPaciente(idPaciente);
+  }
+
 
   @MessagePattern({cmd : 'crearInvitacion'})
   crearInv(@Payload() dto: crearInvitacionDto){

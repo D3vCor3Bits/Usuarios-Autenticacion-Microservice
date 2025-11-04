@@ -6,7 +6,7 @@ import { loginUsuarioDto } from './dto/login-usuario.dto';
 import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
-import { lastValueFrom } from 'rxjs';
+import { isEmpty, lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
@@ -132,7 +132,7 @@ export class UsuariosAutenticacionService {
    */
   async findAll() {
     try {
-      const { data, error } = await this.supabase.from('USUARIO').select('*');
+      const { data, error } = await this.supabase.from('PERFIL').select('*');
 
       if (error) {
         throw new RpcException({
@@ -174,7 +174,12 @@ export class UsuariosAutenticacionService {
           message: `Error al buscar usuario: ${error.message}`,
         });
       }
-
+      if(data.length == 0){
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: "Usuario no encontrado"
+        })
+      }
       return {
         status: 'success',
         message: 'Usuario encontrados correctamente',
@@ -240,7 +245,7 @@ export class UsuariosAutenticacionService {
       // Inserta el registro en la tabla de invitaciones
       const { data, error } = await this.supabase
         .from('invitaciones')
-        .insert([{ correo, nombreCompleto }])
+        .insert([{ correo, nombreCompleto, rol }])
         .select();
 
       if (error) {
@@ -474,4 +479,53 @@ export class UsuariosAutenticacionService {
       })
     }
   }
+
+  async buscarMedicoPaciente(idPaciente: string){
+    const usuario = await this.findUserById(idPaciente);
+    this.validarRolPaciente(usuario.usuarios[0].rol)
+    try {
+      const {data: data , error: err} = await this.supabase.
+      from('PACIENTE_MEDICO')
+      .select('*')
+      .eq("idPaciente", idPaciente);
+
+      if(err){
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: "Algo sucedió buscando el id del médico"
+        })
+      }
+      const medico = await this.findUserById(data[0].idMedico);
+
+      return medico.usuarios[0];
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error
+      })
+    }
+  }
+
+  private validarRolPaciente(rol: string){
+    if(rol != 'paciente'){
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: "El rol de este usuario debe ser paciente"
+      })
+    }
+  }
+  // private validarRolCuidador(rol: string){
+  //   throw new RpcException({
+  //     status: HttpStatus.BAD_REQUEST,
+  //     message: "El rol de este usuario debe ser paciente"
+  //   })
+  // }
+
+  // private validarRolCuidador(rol: string){
+  //   throw new RpcException({
+  //     status: HttpStatus.BAD_REQUEST,
+  //     message: "El rol de este usuario debe ser paciente"
+  //   })
+  // }
+
 }
