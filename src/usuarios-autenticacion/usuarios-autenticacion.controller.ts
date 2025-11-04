@@ -49,7 +49,10 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.asignCaregiverToPatient(dto);
   }
 
-
+  @MessagePattern({cmd:'pacienteCuidador'})
+  buscarPacienteCuidador(@Payload('idCuidador', ParseUUIDPipe) idCuidador: string){
+    return this.usuariosService.buscarPacienteCuidador(idCuidador);
+  }
 
 
   @MessagePattern({cmd : 'crearInvitacion'})
