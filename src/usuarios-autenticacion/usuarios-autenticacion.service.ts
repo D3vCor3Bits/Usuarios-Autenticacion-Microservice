@@ -132,7 +132,7 @@ export class UsuariosAutenticacionService {
    */
   async findAll() {
     try {
-      const { data, error } = await this.supabase.from('USUARIO').select('*');
+      const { data, error } = await this.supabase.from('PERFIL').select('*');
 
       if (error) {
         throw new RpcException({
@@ -245,7 +245,7 @@ export class UsuariosAutenticacionService {
       // Inserta el registro en la tabla de invitaciones
       const { data, error } = await this.supabase
         .from('invitaciones')
-        .insert([{ correo, nombreCompleto }])
+        .insert([{ correo, nombreCompleto, rol }])
         .select();
 
       if (error) {
