@@ -6,16 +6,41 @@ import { loginUsuarioDto } from './dto/login-usuario.dto';
 import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
-import { isEmpty, lastValueFrom } from 'rxjs';
+import { lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
+import * as crypto from 'crypto';
+import { Buffer } from 'buffer';
 
 @Injectable()
 export class UsuariosAutenticacionService {
   constructor(
-    @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient, 
-    @Inject('ALERTAS_SERVICE') private readonly clientProxy: ClientProxy, 
+    @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
+    @Inject('ALERTAS_SERVICE') private readonly clientProxy: ClientProxy,
+  ) {}
 
-  ) { }
+  // === Encriptar ===
+  private encrypt(text: string): string {
+    const key = crypto
+      .createHash('sha256')
+      .update(process.env.CRYPTO_KEY || 'default-key')
+      .digest();
+    const cipher = crypto.createCipheriv('aes-256-ecb', key, null);
+    let encrypted = cipher.update(text, 'utf8', 'base64');
+    encrypted += cipher.final('base64');
+    return encrypted.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  private decrypt(encryptedText: string): string {
+    const key = crypto
+      .createHash('sha256')
+      .update(process.env.CRYPTO_KEY || 'default-key')
+      .digest();
+    const decipher = crypto.createDecipheriv('aes-256-ecb', key, null);
+    const base64 = encryptedText.replace(/-/g, '+').replace(/_/g, '/');
+    let decrypted = decipher.update(base64, 'base64', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  }
 
   /**
    * Realiza  el registro en auth.user, tabla de Supabase para manejar autenticación.
@@ -25,7 +50,6 @@ export class UsuariosAutenticacionService {
    * @returns Un objeto con el estado y mensaje del registro.
    * Al ocurrir un error, se envía la excepción a través de RcpException.
    */
-
   async signUp(dto: CreateUsuariosAutenticacionDto) {
     try {
       const { data, error } = await this.supabase.auth.signUp({
@@ -49,6 +73,8 @@ export class UsuariosAutenticacionService {
       }
 
       await this.crearPerfil(dto, userId);
+      await this.deleteInvitacion(dto.correo);
+
       return {
         ok: true,
         message: 'Usuario registrado y perfil creado correctamente',
@@ -64,6 +90,31 @@ export class UsuariosAutenticacionService {
     }
   }
 
+  async deleteInvitacion(correo: string) {
+    try {
+      const { error } = await this.supabase
+        .from('invitaciones')
+        .delete()
+        .eq('correo', correo);
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al eliminar invitación: ${error.message}`,
+        });
+      }
+
+      return {
+        ok: true,
+        message: 'Invitación eliminada correctamente',
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al eliminar la invitación',
+      });
+    }
+  }
   /*
 
   Función auxiliar para crear el perfil del usuario en la tabla PERFIL
@@ -174,11 +225,11 @@ export class UsuariosAutenticacionService {
           message: `Error al buscar usuario: ${error.message}`,
         });
       }
-      if(data.length == 0){
+      if (data.length == 0) {
         throw new RpcException({
           status: HttpStatus.NOT_FOUND,
-          message: "Usuario no encontrado"
-        })
+          message: 'Usuario no encontrado',
+        });
       }
       return {
         status: 'success',
@@ -199,10 +250,10 @@ export class UsuariosAutenticacionService {
   Borrar un usuario con funciones de administrador.
 
   */
-   async deleteUser(id: string) {
-      try {
-        // Elimina el usuario de Supabase Auth - REVISAR RLS
-        const { error } = await this.supabase.auth.admin.deleteUser(id);
+  async deleteUser(id: string) {
+    try {
+      // Elimina el usuario de Supabase Auth - REVISAR RLS
+      const { error } = await this.supabase.auth.admin.deleteUser(id);
 
       if (error) {
         throw new RpcException({
@@ -211,38 +262,39 @@ export class UsuariosAutenticacionService {
         });
       }
 
-        await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
+      await this.supabase.from('PERFIL').delete().eq('idUsuario', id);
 
-        return {
-          ok: true,
-          message: 'Usuario eliminado correctamente.',
-        };
-      } catch (error) {
-        if (error instanceof RpcException) throw error;
+      return {
+        ok: true,
+        message: 'Usuario eliminado correctamente.',
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
 
-        throw new RpcException({
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: error.message || 'Error interno al eliminar usuario',
-        });
-      }
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al eliminar usuario',
+      });
     }
+  }
   /**
- * Crea una invitación y notifica al microservicio correspondiente.
- *
- * Proceso:
- * 1. Inserta una nueva invitación en la tabla `invitaciones` con los datos proporcionados.
- * 2. Genera un token en formato Base64 a partir del `id` de la invitación creada.
- * 3. Envía un evento al microservicio correspondiente con los datos requeridos.
- *
- * @param dto - Objeto con los datos de la invitación: nombreCompleto, correo y rol.
- * @returns Un objeto con confirmación y los datos de la invitación creada.
- * @throws RpcException - Si ocurre un error en la inserción o durante la emisión del evento.
- */
+   * Crea una invitación y notifica al microservicio correspondiente.
+   *
+   * Proceso:
+   * 1. Inserta una nueva invitación en la tabla `invitaciones` con los datos proporcionados.
+   * 2. Genera un token en formato Base64 a partir del `id` de la invitación creada.
+   * 3. Envía un evento al microservicio correspondiente con los datos requeridos.
+   *
+   * @param dto - Objeto con los datos de la invitación: nombreCompleto, correo y rol.
+   * @returns Un objeto con confirmación y los datos de la invitación creada.
+   * @throws RpcException - Si ocurre un error en la inserción o durante la emisión del evento.
+   */
   async crearInvitacion(dto: crearInvitacionDto) {
     try {
       const { nombreCompleto, email, rol } = dto;
       const correo = email;
-      // Inserta el registro en la tabla de invitaciones
+
+      // 1️⃣ Insertar la invitación en la base de datos
       const { data, error } = await this.supabase
         .from('invitaciones')
         .insert([{ correo, nombreCompleto, rol }])
@@ -257,17 +309,15 @@ export class UsuariosAutenticacionService {
 
       const invitacion = data[0];
 
-      // Genera un token en Base64 a partir del ID de la invitación
-      const token = Buffer.from(String(invitacion.id)).toString('base64');
+      // 2️⃣ Generar token cifrado a partir del ID de la invitación
+      const token = this.encrypt(String(invitacion.id));
 
-      // Emite el evento al otro microservicio
+      // 3️⃣ Emitir evento al microservicio de alertas
       const respuesta = await lastValueFrom(
-        this.clientProxy.emit({ cmd : 'crearInvitacionUsuario'}, {
-          email,
-          nombreCompleto,
-          token,
-          rol,
-        }),
+        this.clientProxy.emit(
+          { cmd: 'crearInvitacionUsuario' },
+          { email, nombreCompleto, token, rol },
+        ),
       );
 
       return {
@@ -275,7 +325,7 @@ export class UsuariosAutenticacionService {
         message: 'Invitación creada correctamente',
         invitacion,
         respuesta,
-        token
+        token,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
@@ -283,6 +333,42 @@ export class UsuariosAutenticacionService {
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
         message: error.message || 'Error interno al crear la invitación',
+      });
+    }
+  }
+
+  // === Obtener invitación desde el token ===
+  async obtenerInvitacionPorToken(token: string) {
+    try {
+      // 1️⃣ Desencriptar el token para recuperar el ID original
+      const decodedId = this.decrypt(token);
+
+      // 2️⃣ Buscar invitación en Supabase
+      const { data, error } = await this.supabase
+        .from('invitaciones')
+        .select('*')
+        .eq('id', decodedId)
+        .single();
+
+      if (error || !data) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Invitación no encontrada o token inválido',
+        });
+      }
+
+      // 3️⃣ Retornar la invitación completa
+      return {
+        ok: true,
+        message: 'Invitación obtenida correctamente',
+        invitacion: data,
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error al obtener invitación desde token',
       });
     }
   }
@@ -459,43 +545,43 @@ export class UsuariosAutenticacionService {
     }
   }
 
-  async buscarPacienteCuidador(idCuidador: string){
+  async buscarPacienteCuidador(idCuidador: string) {
     try {
-      const {data: data , error: err} = await this.supabase.
-      from('CUIDADOR_PACIENTE')
-      .select('idPaciente')
-      .eq("idCuidador", idCuidador);
+      const { data: data, error: err } = await this.supabase
+        .from('CUIDADOR_PACIENTE')
+        .select('idPaciente')
+        .eq('idCuidador', idCuidador);
 
-      if(err){
+      if (err) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: "Algo sucedió buscando el id del paciente"
-        })
+          message: 'Algo sucedió buscando el id del paciente',
+        });
       }
 
       return data;
     } catch (error) {
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message
-      })
+        message: error.message,
+      });
     }
   }
 
-  async buscarMedicoPaciente(idPaciente: string){
+  async buscarMedicoPaciente(idPaciente: string) {
     const usuario = await this.findUserById(idPaciente);
-    this.validarRolPaciente(usuario.usuarios[0].rol)
+    this.validarRolPaciente(usuario.usuarios[0].rol);
     try {
-      const {data: data , error: err} = await this.supabase.
-      from('PACIENTE_MEDICO')
-      .select('*')
-      .eq("idPaciente", idPaciente);
+      const { data: data, error: err } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('*')
+        .eq('idPaciente', idPaciente);
 
-      if(err){
+      if (err) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: "Algo sucedió buscando el id del médico"
-        })
+          message: 'Algo sucedió buscando el id del médico',
+        });
       }
       const medico = await this.findUserById(data[0].idMedico);
 
@@ -503,66 +589,30 @@ export class UsuariosAutenticacionService {
     } catch (error) {
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error
-      })
-    }
-  }
-
-  private validarRolPaciente(rol: string){
-    if(rol != 'paciente'){
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: "El rol de este usuario debe ser paciente"
-      })
-    }
-  }
-  // private validarRolCuidador(rol: string){
-  //   throw new RpcException({
-  //     status: HttpStatus.BAD_REQUEST,
-  //     message: "El rol de este usuario debe ser paciente"
-  //   })
-  // }
-
-  // private validarRolCuidador(rol: string){
-  //   throw new RpcException({
-  //     status: HttpStatus.BAD_REQUEST,
-  //     message: "El rol de este usuario debe ser paciente"
-  //   })
-  // }
-async obtenerInvitacionPorToken(token: string) {
-  try {
-    // 1️⃣ Decodifica el token desde Base64
-    const decodedId = Buffer.from(token, 'base64').toString('utf-8');
-
-    // 2️⃣ Busca la invitación en la tabla
-    const { data, error } = await this.supabase
-      .from('invitaciones')
-      .select('*')
-      .eq('id', decodedId)
-      .single();
-
-    // 3️⃣ Manejo de errores
-    if (error || !data) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: 'Invitación no encontrada o token inválido',
+        message: error,
       });
     }
-
-    // 4️⃣ Devuelve la invitación completa
-    return {
-      ok: true,
-      message: 'Invitación obtenida correctamente',
-      invitacion: data,
-    };
-  } catch (error) {
-    if (error instanceof RpcException) throw error;
-
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: error.message || 'Error al obtener invitación desde token',
-    });
   }
-}
 
+  private validarRolPaciente(rol: string) {
+    if (rol != 'paciente') {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'El rol de este usuario debe ser paciente',
+      });
+    }
+  }
+  // private validarRolCuidador(rol: string){
+  //   throw new RpcException({
+  //     status: HttpStatus.BAD_REQUEST,
+  //     message: "El rol de este usuario debe ser paciente"
+  //   })
+  // }
+
+  // private validarRolCuidador(rol: string){
+  //   throw new RpcException({
+  //     status: HttpStatus.BAD_REQUEST,
+  //     message: "El rol de este usuario debe ser paciente"
+  //   })
+  // }
 }
