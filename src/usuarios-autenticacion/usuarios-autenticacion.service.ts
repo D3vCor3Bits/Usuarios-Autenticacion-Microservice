@@ -240,8 +240,8 @@ export class UsuariosAutenticacionService {
  */
   async crearInvitacion(dto: crearInvitacionDto) {
     try {
-      const { nombreCompleto, correo, rol } = dto;
-
+      const { nombreCompleto, email, rol } = dto;
+      const correo = email;
       // Inserta el registro en la tabla de invitaciones
       const { data, error } = await this.supabase
         .from('invitaciones')
@@ -261,9 +261,9 @@ export class UsuariosAutenticacionService {
       const token = Buffer.from(String(invitacion.id)).toString('base64');
 
       // Emite el evento al otro microservicio
-      await lastValueFrom(
-        this.clientProxy.emit('invitacion_creada', {
-          correo,
+      const respuesta = await lastValueFrom(
+        this.clientProxy.emit({ cmd : 'crearInvitacionUsuario'}, {
+          email,
           nombreCompleto,
           token,
           rol,
@@ -274,6 +274,8 @@ export class UsuariosAutenticacionService {
         ok: true,
         message: 'Invitación creada correctamente',
         invitacion,
+        respuesta,
+        token
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
@@ -527,5 +529,40 @@ export class UsuariosAutenticacionService {
   //     message: "El rol de este usuario debe ser paciente"
   //   })
   // }
+async obtenerInvitacionPorToken(token: string) {
+  try {
+    // 1️⃣ Decodifica el token desde Base64
+    const decodedId = Buffer.from(token, 'base64').toString('utf-8');
+
+    // 2️⃣ Busca la invitación en la tabla
+    const { data, error } = await this.supabase
+      .from('invitaciones')
+      .select('*')
+      .eq('id', decodedId)
+      .single();
+
+    // 3️⃣ Manejo de errores
+    if (error || !data) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'Invitación no encontrada o token inválido',
+      });
+    }
+
+    // 4️⃣ Devuelve la invitación completa
+    return {
+      ok: true,
+      message: 'Invitación obtenida correctamente',
+      invitacion: data,
+    };
+  } catch (error) {
+    if (error instanceof RpcException) throw error;
+
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: error.message || 'Error al obtener invitación desde token',
+    });
+  }
+}
 
 }
