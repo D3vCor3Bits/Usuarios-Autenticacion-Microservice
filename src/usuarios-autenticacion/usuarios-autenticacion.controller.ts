@@ -64,6 +64,12 @@ export class UsuariosAutenticacionController {
   crearInv(@Payload() dto: crearInvitacionDto){
     return this.usuariosService.crearInvitacion(dto);
   }
+
+  @MessagePattern({cmd : 'verificarInvitacion'})
+  verificarInv(@Payload('token') codigo: string){
+    return this.usuariosService.obtenerInvitacionPorToken(codigo);
+  }
+
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);

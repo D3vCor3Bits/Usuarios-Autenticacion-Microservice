@@ -5,7 +5,7 @@ export class crearInvitacionDto {
     nombreCompleto: string;
 
     @IsEmail({}, { message: 'Debe proporcionar un correo electrónico válido.' })
-    correo: string;
+    email: string;
 
     @IsString({ message: 'El rol debe ser una cadena de texto.' })
     rol: string;
