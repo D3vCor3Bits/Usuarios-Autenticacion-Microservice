@@ -70,6 +70,19 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.obtenerInvitacionPorToken(codigo);
   }
 
+  @MessagePattern({ cmd: 'listarUsuariosInactivosConSesiones' })
+  listarInactivos(@Payload() payload: { 
+    horasInactividad: number, 
+    pacientesConSesiones: Array<{ idPaciente: string, sesionesActivas: number }> 
+  }) {
+    return this.usuariosService.listarUsuariosInactivosConSesiones(payload);
+  }
+
+  @MessagePattern({ cmd: 'registrarAlertaInactividad' })
+  registrarAlerta(@Payload() payload: { userId: string }) {
+    return this.usuariosService.registrarAlertaInactividad(payload.userId);
+  }
+
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);
