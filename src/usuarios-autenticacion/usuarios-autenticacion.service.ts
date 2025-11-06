@@ -511,7 +511,7 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    if (rolCuidData.rol !== 'medico') {
+    if (rolCuidData.rol !== 'cuidador') {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: `El usuario con id ${idCuidador} no tiene rol de médico.`,
