@@ -162,18 +162,47 @@ export class UsuariosAutenticacionService {
         email,
         password,
       });
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.UNAUTHORIZED,
+          message: `Error al iniciar sesión: ${error.message}`,
+        });
+      }
+
+      const userId = data.user?.id;
+      if (!userId) {
+        throw new RpcException({
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: 'No se obtuvo el ID del usuario al iniciar sesión',
+        });
+      }
+
+      // Registrar login en HISTORIAL_INGRESO
+      const { error: errorHistorial } = await this.supabase
+        .from('HISTORIAL_INGRESO')
+        .insert([{ 
+          idPaciente: userId,
+          loginDate: new Date().toISOString()
+        }]);
+
+      if (errorHistorial) {
+        console.error('Error al registrar historial de ingreso:', errorHistorial.message);
+        // No lanzamos excepción para no bloquear el login
+      }
+
       return {
         ok: true,
         access_token: data.session?.access_token,
         expires_in: data.session?.expires_in,
-        user_id: data.user?.id,
+        user_id: userId,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
 
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al crear el perfil',
+        message: error.message || 'Error interno al iniciar sesión',
       });
     }
   }
@@ -482,7 +511,7 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    if (rolCuidData.rol !== 'medico') {
+    if (rolCuidData.rol !== 'cuidador') {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: `El usuario con id ${idCuidador} no tiene rol de médico.`,
@@ -602,6 +631,105 @@ export class UsuariosAutenticacionService {
       });
     }
   }
+
+  /**
+   * Lista usuarios inactivos que tienen sesiones activas
+   */
+  async listarUsuariosInactivosConSesiones(payload: { 
+    horasInactividad: number, 
+    pacientesConSesiones: Array<{ idPaciente: string, sesionesActivas: number }> 
+  }) {
+    try {
+      const { horasInactividad, pacientesConSesiones } = payload;
+      
+      if (!pacientesConSesiones || pacientesConSesiones.length === 0) {
+        return { ok: true, usuarios: [] };
+      }
+
+      // Obtener último login de cada paciente
+      const usuarios: any[] = [];
+      
+      for (const { idPaciente, sesionesActivas } of pacientesConSesiones) {
+        // Buscar último login
+        const { data: historial, error: errorHistorial } = await this.supabase
+          .from('HISTORIAL_INGRESO')
+          .select('loginDate')
+          .eq('idPaciente', idPaciente)
+          .order('loginDate', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (errorHistorial || !historial) continue;
+
+        // Calcular diferencia de tiempo
+        const horasDiferencia = (Date.now() - new Date(historial.loginDate).getTime()) / (1000 * 60 * 60);
+        
+        if (horasDiferencia < horasInactividad) continue; // Aún está activo
+
+        // Verificar si ya se envió alerta hoy
+        const { data: notificacionHoy } = await this.supabase
+          .from('NOTIFICACION_USO')
+          .select('idNotificacion')
+          .eq('idUsuario', idPaciente)
+          .like('mensaje', 'Recordatorio: Tienes sesiones activas%')
+          .gte('fecha', new Date().toISOString().split('T')[0]) // Desde hoy 00:00
+          .limit(1);
+
+        if (notificacionHoy && notificacionHoy.length > 0) continue; // Ya se envió hoy
+
+        // Obtener datos del perfil
+        const { data: perfil } = await this.supabase
+          .from('PERFIL')
+          .select('nombre, correo')
+          .eq('idUsuario', idPaciente)
+          .single();
+
+        if (!perfil) continue;
+
+        usuarios.push({
+          id_usuario: idPaciente,
+          email: perfil.correo,
+          nombre: perfil.nombre,
+          last_login: historial.loginDate,
+          sesiones_activas: sesionesActivas // Conteo real de sesiones
+        });
+      }
+
+      return { ok: true, usuarios };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error al buscar usuarios inactivos',
+      });
+    }
+  }
+
+  /**
+   * Registra alerta en NOTIFICACION_USO
+   */
+  async registrarAlertaInactividad(userId: string) {
+    try {
+      const mensaje = `Recordatorio: Tienes sesiones activas pendientes. Te invitamos a completarlas.`;
+      
+      const { error } = await this.supabase
+        .from('NOTIFICACION_USO')
+        .insert([{ 
+          idUsuario: userId,
+          mensaje: mensaje,
+          fecha: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
+
+      return { ok: true, message: 'Notificación registrada' };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message,
+      });
+    }
+  }
+
   // private validarRolCuidador(rol: string){
   //   throw new RpcException({
   //     status: HttpStatus.BAD_REQUEST,
