@@ -730,6 +730,66 @@ export class UsuariosAutenticacionService {
     }
   }
 
+  async listarMedicosPaciente(idMedico: string){
+    try {
+      const doctores = await this.findUserById(idMedico);
+      if (doctores.usuarios.length == 0) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: 'No se pudo encontrar el usuario',
+        });
+      }
+      if (doctores.usuarios[0].rol != 'medico') {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Solo se admite id de un medico',
+        });
+      }
+
+      // Obtener sólo los idPaciente relacionados con el médico
+      const { data: pmData, error: pmError } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('idPaciente')
+        .eq('idMedico', idMedico);
+
+      if (pmError) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al buscar relaciones paciente-médico: ${pmError.message}`,
+        });
+      }
+
+      const patientIds: string[] = (pmData || []).map((r: any) => r.idPaciente).filter(Boolean);
+
+      if (patientIds.length === 0) {
+        return { ok: true, pacientes: [], count: 0 };
+      }
+
+      // Ahora traer los perfiles de los pacientes
+      const { data: pacientes, error: pacientesError } = await this.supabase
+        .from('PERFIL')
+        .select('*')
+        .in('idUsuario', patientIds);
+
+      if (pacientesError) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al traer perfiles de pacientes: ${pacientesError.message}`,
+        });
+      }
+
+      return {
+        pacientes: pacientes ?? [],
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al consultar pacientes del médico',
+      });
+    }
+  }
+
   // private validarRolCuidador(rol: string){
   //   throw new RpcException({
   //     status: HttpStatus.BAD_REQUEST,
