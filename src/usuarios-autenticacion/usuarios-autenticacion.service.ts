@@ -319,52 +319,73 @@ export class UsuariosAutenticacionService {
    * @throws RpcException - Si ocurre un error en la inserción o durante la emisión del evento.
    */
   async crearInvitacion(dto: crearInvitacionDto) {
-    try {
-      const { nombreCompleto, email, rol } = dto;
-      const correo = email;
+  try {
+    const { nombreCompleto, email, rol } = dto;
+    const correo = email;
 
-      // 1️⃣ Insertar la invitación en la base de datos
-      const { data, error } = await this.supabase
-        .from('invitaciones')
-        .insert([{ correo, nombreCompleto, rol }])
-        .select();
+    // ✅ Verificar si ya existe el correo en la tabla PERFIL
+    const { data: registro, error: errorPerfil } = await this.supabase
+      .from('PERFIL')
+      .select('id')
+      .eq('correo', email)
+      .single();
 
-      if (error) {
-        throw new RpcException({
-          status: HttpStatus.BAD_REQUEST,
-          message: `Error al crear invitación: ${error.message}`,
-        });
-      }
-
-      const invitacion = data[0];
-
-      // 2️⃣ Generar token cifrado a partir del ID de la invitación
-      const token = this.encrypt(String(invitacion.id));
-
-      // 3️⃣ Emitir evento al microservicio de alertas
-      const respuesta = await lastValueFrom(
-        this.clientProxy.emit(
-          { cmd: 'crearInvitacionUsuario' },
-          { email, nombreCompleto, token, rol },
-        ),
-      );
-
-      return {
-        ok: true,
-        message: 'Invitación creada correctamente',
-        invitacion,
-        respuesta,
-        token,
-      };
-    } catch (error) {
-      if (error instanceof RpcException) throw error;
-
+    if (errorPerfil && errorPerfil.code !== 'PGRST116') {
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al crear la invitación',
+        message: `Error al verificar perfil: ${errorPerfil.message}`,
       });
     }
+
+    if (registro) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'El correo ya está registrado en el sistema.',
+      });
+    }
+
+    // ✅ Insertar la invitación en la base de datos
+    const { data, error } = await this.supabase
+      .from('invitaciones')
+      .insert([{ correo, nombreCompleto, rol }])
+      .select();
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al crear invitación: ${error.message}`,
+      });
+    }
+
+    const invitacion = data[0];
+
+    // ✅ Generar token cifrado a partir del ID de la invitación
+    const token = this.encrypt(String(invitacion.id));
+
+    // ✅ Emitir evento al microservicio de alertas
+    await lastValueFrom(
+      this.clientProxy.emit(
+        { cmd: 'crearInvitacionUsuario' },
+        { email, nombreCompleto, token, rol },
+      ),
+    );
+
+    return {
+      ok: true,
+      message: 'Invitación creada correctamente',
+      invitacion,
+      token,
+    };
+  } catch (error) {
+    if (error instanceof RpcException) throw error;
+
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: error.message || 'Error interno al crear la invitación',
+    });
   }
+}
+
 
   // === Obtener invitación desde el token ===
   async obtenerInvitacionPorToken(token: string) {
