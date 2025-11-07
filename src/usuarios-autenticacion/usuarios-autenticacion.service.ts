@@ -790,6 +790,45 @@ export class UsuariosAutenticacionService {
     }
   }
 
+
+
+  async totalUsuarios(){
+    try {
+      // Obtener todos los perfiles con sus roles
+      const { data, error } = await this.supabase
+        .from('PERFIL')
+        .select('rol');
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al contar usuarios: ${error.message}`,
+        });
+      }
+
+      // Contar por rol
+      const medicos = data?.filter(u => u.rol === 'medico').length || 0;
+      const pacientes = data?.filter(u => u.rol === 'paciente').length || 0;
+      const cuidadores = data?.filter(u => u.rol === 'cuidador').length || 0;
+      const administradores = data?.filter(u => u.rol === 'administrador').length || 0;
+      const total = data?.length || 0;
+
+      return {
+        total,
+        medicos,
+        pacientes,
+        cuidadores
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message || 'Error interno al contar usuarios',
+      });
+    }
+  }
+
   // private validarRolCuidador(rol: string){
   //   throw new RpcException({
   //     status: HttpStatus.BAD_REQUEST,

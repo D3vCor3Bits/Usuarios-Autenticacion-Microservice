@@ -88,6 +88,11 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.listarMedicosPaciente(idMedico);
   }
 
+  @MessagePattern({cmd:'totalUsuarios'})
+  totalPacientes(){
+    return this.usuariosService.totalUsuarios();
+  }
+
   /*@MessagePattern('buscar_usuario')
   buscar(@Payload() id: number) {
     return this.usuariosService.findOne(id);
