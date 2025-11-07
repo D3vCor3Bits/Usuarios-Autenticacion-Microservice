@@ -24,6 +24,12 @@ describe('UsuariosAutenticacionService', () => {
     })),
   };
 
+  const mockAlertasService = {
+    send: jest.fn().mockReturnValue({
+      toPromise: jest.fn().mockResolvedValue({}),
+    }),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
 
@@ -33,6 +39,10 @@ describe('UsuariosAutenticacionService', () => {
         {
           provide: 'SUPABASE_CLIENT',
           useValue: mockSupabaseClient,
+        },
+        {
+          provide: 'ALERTAS_SERVICE',
+          useValue: mockAlertasService,
         },
       ],
     }).compile();
@@ -252,7 +262,7 @@ describe('UsuariosAutenticacionService', () => {
         message: 'Usuarios encontrados correctamente',
         usuarios: mockUsuarios,
       });
-      expect(mockSupabaseClient.from).toHaveBeenCalledWith('USUARIO');
+      expect(mockSupabaseClient.from).toHaveBeenCalledWith('PERFIL');
     });
 
     it('debe lanzar RpcException cuando falla la consulta', async () => {
