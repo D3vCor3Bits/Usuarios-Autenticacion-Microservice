@@ -1,4 +1,4 @@
-import { Controller, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, ParseIntPipe, ParseUUIDPipe } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { CreateUsuariosAutenticacionDto } from './dto/create-usuarios-autenticacion.dto';
@@ -81,6 +81,11 @@ export class UsuariosAutenticacionController {
   @MessagePattern({ cmd: 'registrarAlertaInactividad' })
   registrarAlerta(@Payload() payload: { userId: string }) {
     return this.usuariosService.registrarAlertaInactividad(payload.userId);
+  }
+
+  @MessagePattern({cmd:'pacientesMedico'})
+  doctoresDeUnPaciente(@Payload('idMedico', ParseUUIDPipe) idMedico: string){
+    return this.usuariosService.listarMedicosPaciente(idMedico);
   }
 
   /*@MessagePattern('buscar_usuario')
