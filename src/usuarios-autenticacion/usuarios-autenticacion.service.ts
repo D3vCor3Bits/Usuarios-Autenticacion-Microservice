@@ -323,7 +323,7 @@ export class UsuariosAutenticacionService {
     const { nombreCompleto, email, rol } = dto;
     const correo = email;
 
-    // ✅ Verificar si ya existe el correo en la tabla PERFIL
+    // Verificar si ya existe el correo en la tabla PERFIL
     const { data: registro, error: errorPerfil } = await this.supabase
       .from('PERFIL')
       .select('id')
@@ -344,7 +344,7 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    // ✅ Insertar la invitación en la base de datos
+    // Insertar la invitación en la base de datos
     const { data, error } = await this.supabase
       .from('invitaciones')
       .insert([{ correo, nombreCompleto, rol }])
@@ -359,10 +359,10 @@ export class UsuariosAutenticacionService {
 
     const invitacion = data[0];
 
-    // ✅ Generar token cifrado a partir del ID de la invitación
+    // Generar token cifrado a partir del ID de la invitación
     const token = this.encrypt(String(invitacion.id));
 
-    // ✅ Emitir evento al microservicio de alertas
+    // Emitir evento al microservicio de alertas
     await lastValueFrom(
       this.clientProxy.emit(
         { cmd: 'crearInvitacionUsuario' },
