@@ -337,7 +337,7 @@ export class UsuariosAutenticacionService {
       // Verificar si ya existe el correo en la tabla PERFIL
       const { data: registro, error: errorPerfil } = await this.supabase
         .from('PERFIL')
-        .select('id')
+        .select('idUsuario')
         .eq('correo', email)
         .single();
 
