@@ -9,7 +9,8 @@ import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import * as crypto from 'crypto';
-
+import { withUserToken } from 'src/common/helpers/supabase-token.helper';
+import { actualizarContraseñaDto } from './dto/actualizar-contraseña.dto';
 @Injectable()
 export class UsuariosAutenticacionService {
   constructor(
@@ -135,9 +136,12 @@ export class UsuariosAutenticacionService {
           message: `Error al crear perfil: ${error.message}`,
         });
       }
-      if(rol === 'paciente'){
+      if (rol === 'paciente') {
         // Asignar médico al paciente si el rol es paciente
-        await this.asignMedicToPatient({idMedico: idMedico, idPaciente: idUsuario});
+        await this.asignMedicToPatient({
+          idMedico: idMedico,
+          idPaciente: idUsuario,
+        });
       }
       return {
         ok: true,
@@ -859,5 +863,35 @@ export class UsuariosAutenticacionService {
         message: error.message || 'Error interno al contar usuarios',
       });
     }
+  }
+
+  async enviarMagicLink(email: string) {
+    const { error } = await this.supabase.auth.signInWithOtp({ email });
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al enviar OTP: ${error.message}`,
+      });
+    }
+
+    return { ok: true, message: 'Código OTP enviado al correo.' };
+  }
+
+  async actualizarContraseña(dto: actualizarContraseñaDto, token: string) {
+    const { password: nuevaContrasena } = dto;
+    const cliente = await withUserToken(this.supabase, token);
+    const { data, error } = await cliente.auth.updateUser({
+      password: nuevaContrasena,
+    });
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error cambiando contraseña: ${error.message}`,
+      });
+    }
+
+    return data.user;
   }
 }

@@ -1,20 +1,26 @@
-import { SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Inyecta temporalmente un token de acceso en un cliente Supabase.
- * Esto permite ejecutar consultas con las políticas RLS (Row Level Security)
- * aplicadas a ese usuario.
+ * Crea un cliente Supabase temporal con el token de usuario.
+ * Esto evita conflictos con el cliente global (service role).
  */
-
 export async function withUserToken(
   supabase: SupabaseClient,
   token: string,
 ): Promise<SupabaseClient> {
-  // Establece la sesión temporalmente para ese token
-  await supabase.auth.setSession({
+  const url = (supabase as any).supabaseUrl;
+  const key = (supabase as any).supabaseKey;
+
+  const userClient = createClient(url, key);
+
+  const { data, error } = await userClient.auth.setSession({
     access_token: token,
-    refresh_token: '',
+    refresh_token: token,
   });
 
-  return supabase;
+  if (error || !data.session) {
+    throw new Error('Token inválido o sesión expirada.');
+  }
+
+  return userClient;
 }
