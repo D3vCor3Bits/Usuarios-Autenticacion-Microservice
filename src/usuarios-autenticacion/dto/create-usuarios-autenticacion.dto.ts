@@ -1,12 +1,12 @@
-import { IsEmail, IsString, MinLength, IsInt, IsOptional, IsArray } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsInt, IsOptional, IsArray, IsDate } from 'class-validator';
 
 export class CreateUsuariosAutenticacionDto {
   @IsString({ message: 'El nombre debe ser una cadena de texto.' })
   nombre: string;
 
-  @IsInt({ message: 'La edad debe ser un número entero.' })
+  @IsDate({ message: 'La fecha  debe ser en forma YYYY-MM-DD.' })
   @IsOptional()
-  edad?: number;
+  fechaNacimiento?: number;
 
   @IsString({ message: 'El estado debe ser una cadena de texto.' })
   @IsOptional()
@@ -20,6 +20,5 @@ export class CreateUsuariosAutenticacionDto {
   contrasenia: string;
 
   @IsString({ message: 'El rol debe ser una cadena de texto.' })
-  @IsOptional()
   rol?: string; 
 }
