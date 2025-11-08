@@ -9,7 +9,9 @@ import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import * as crypto from 'crypto';
-import { Buffer } from 'buffer';
+import { withUserToken } from 'src/common/helpers/supabase-token.helper';
+import { createUserSupabaseClient } from 'src/common/helpers/supabase-user.helper';
+
 
 @Injectable()
 export class UsuariosAutenticacionService {
@@ -123,11 +125,11 @@ export class UsuariosAutenticacionService {
 
   async crearPerfil(dto: CreateUsuariosAutenticacionDto, idUsuario: string) {
     try {
-      const { nombre, edad, status, correo, rol } = dto;
+      const { nombre, fechaNacimiento, status, correo, rol } = dto;
 
       const { data, error } = await this.supabase
         .from('PERFIL')
-        .insert([{ idUsuario, nombre, edad, status, correo, rol }])
+        .insert([{ idUsuario, nombre, status, correo, rol, fechaNacimiento }])
         .select();
 
       if (error) {
@@ -181,13 +183,18 @@ export class UsuariosAutenticacionService {
       // Registrar login en HISTORIAL_INGRESO
       const { error: errorHistorial } = await this.supabase
         .from('HISTORIAL_INGRESO')
-        .insert([{ 
-          idPaciente: userId,
-          loginDate: new Date().toISOString()
-        }]);
+        .insert([
+          {
+            idPaciente: userId,
+            loginDate: new Date().toISOString(),
+          },
+        ]);
 
       if (errorHistorial) {
-        console.error('Error al registrar historial de ingreso:', errorHistorial.message);
+        console.error(
+          'Error al registrar historial de ingreso:',
+          errorHistorial.message,
+        );
         // No lanzamos excepción para no bloquear el login
       }
 
@@ -279,7 +286,7 @@ export class UsuariosAutenticacionService {
   Borrar un usuario con funciones de administrador.
 
   */
-  async deleteUser(id: string) {
+  /* async deleteUser(id: string) {
     try {
       // Elimina el usuario de Supabase Auth - REVISAR RLS
       const { error } = await this.supabase.auth.admin.deleteUser(id);
@@ -305,7 +312,7 @@ export class UsuariosAutenticacionService {
         message: error.message || 'Error interno al eliminar usuario',
       });
     }
-  }
+  } */
   /**
    * Crea una invitación y notifica al microservicio correspondiente.
    *
@@ -319,73 +326,72 @@ export class UsuariosAutenticacionService {
    * @throws RpcException - Si ocurre un error en la inserción o durante la emisión del evento.
    */
   async crearInvitacion(dto: crearInvitacionDto) {
-  try {
-    const { nombreCompleto, email, rol } = dto;
-    const correo = email;
+    try {
+      const { nombreCompleto, email, rol } = dto;
+      const correo = email;
 
-    // Verificar si ya existe el correo en la tabla PERFIL
-    const { data: registro, error: errorPerfil } = await this.supabase
-      .from('PERFIL')
-      .select('id')
-      .eq('correo', email)
-      .single();
+      // Verificar si ya existe el correo en la tabla PERFIL
+      const { data: registro, error: errorPerfil } = await this.supabase
+        .from('PERFIL')
+        .select('id')
+        .eq('correo', email)
+        .single();
 
-    if (errorPerfil && errorPerfil.code !== 'PGRST116') {
+      if (errorPerfil && errorPerfil.code !== 'PGRST116') {
+        throw new RpcException({
+          status: HttpStatus.INTERNAL_SERVER_ERROR,
+          message: `Error al verificar perfil: ${errorPerfil.message}`,
+        });
+      }
+
+      if (registro) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'El correo ya está registrado en el sistema.',
+        });
+      }
+
+      // Insertar la invitación en la base de datos
+      const { data, error } = await this.supabase
+        .from('invitaciones')
+        .insert([{ correo, nombreCompleto, rol }])
+        .select();
+
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al crear invitación: ${error.message}`,
+        });
+      }
+
+      const invitacion = data[0];
+
+      // Generar token cifrado a partir del ID de la invitación
+      const token = this.encrypt(String(invitacion.id));
+
+      // Emitir evento al microservicio de alertas
+      await lastValueFrom(
+        this.clientProxy.emit(
+          { cmd: 'crearInvitacionUsuario' },
+          { email, nombreCompleto, token, rol },
+        ),
+      );
+
+      return {
+        ok: true,
+        message: 'Invitación creada correctamente',
+        invitacion,
+        token,
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: `Error al verificar perfil: ${errorPerfil.message}`,
+        message: error.message || 'Error interno al crear la invitación',
       });
     }
-
-    if (registro) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: 'El correo ya está registrado en el sistema.',
-      });
-    }
-
-    // Insertar la invitación en la base de datos
-    const { data, error } = await this.supabase
-      .from('invitaciones')
-      .insert([{ correo, nombreCompleto, rol }])
-      .select();
-
-    if (error) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al crear invitación: ${error.message}`,
-      });
-    }
-
-    const invitacion = data[0];
-
-    // Generar token cifrado a partir del ID de la invitación
-    const token = this.encrypt(String(invitacion.id));
-
-    // Emitir evento al microservicio de alertas
-    await lastValueFrom(
-      this.clientProxy.emit(
-        { cmd: 'crearInvitacionUsuario' },
-        { email, nombreCompleto, token, rol },
-      ),
-    );
-
-    return {
-      ok: true,
-      message: 'Invitación creada correctamente',
-      invitacion,
-      token,
-    };
-  } catch (error) {
-    if (error instanceof RpcException) throw error;
-
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: error.message || 'Error interno al crear la invitación',
-    });
   }
-}
-
 
   // === Obtener invitación desde el token ===
   async obtenerInvitacionPorToken(token: string) {
@@ -656,20 +662,23 @@ export class UsuariosAutenticacionService {
   /**
    * Lista usuarios inactivos que tienen sesiones activas
    */
-  async listarUsuariosInactivosConSesiones(payload: { 
-    horasInactividad: number, 
-    pacientesConSesiones: Array<{ idPaciente: string, sesionesActivas: number }> 
+  async listarUsuariosInactivosConSesiones(payload: {
+    horasInactividad: number;
+    pacientesConSesiones: Array<{
+      idPaciente: string;
+      sesionesActivas: number;
+    }>;
   }) {
     try {
       const { horasInactividad, pacientesConSesiones } = payload;
-      
+
       if (!pacientesConSesiones || pacientesConSesiones.length === 0) {
         return { ok: true, usuarios: [] };
       }
 
       // Obtener último login de cada paciente
       const usuarios: any[] = [];
-      
+
       for (const { idPaciente, sesionesActivas } of pacientesConSesiones) {
         // Buscar último login
         const { data: historial, error: errorHistorial } = await this.supabase
@@ -683,8 +692,10 @@ export class UsuariosAutenticacionService {
         if (errorHistorial || !historial) continue;
 
         // Calcular diferencia de tiempo
-        const horasDiferencia = (Date.now() - new Date(historial.loginDate).getTime()) / (1000 * 60 * 60);
-        
+        const horasDiferencia =
+          (Date.now() - new Date(historial.loginDate).getTime()) /
+          (1000 * 60 * 60);
+
         if (horasDiferencia < horasInactividad) continue; // Aún está activo
 
         // Verificar si ya se envió alerta hoy
@@ -712,7 +723,7 @@ export class UsuariosAutenticacionService {
           email: perfil.correo,
           nombre: perfil.nombre,
           last_login: historial.loginDate,
-          sesiones_activas: sesionesActivas // Conteo real de sesiones
+          sesiones_activas: sesionesActivas, // Conteo real de sesiones
         });
       }
 
@@ -731,14 +742,14 @@ export class UsuariosAutenticacionService {
   async registrarAlertaInactividad(userId: string) {
     try {
       const mensaje = `Recordatorio: Tienes sesiones activas pendientes. Te invitamos a completarlas.`;
-      
-      const { error } = await this.supabase
-        .from('NOTIFICACION_USO')
-        .insert([{ 
+
+      const { error } = await this.supabase.from('NOTIFICACION_USO').insert([
+        {
           idUsuario: userId,
           mensaje: mensaje,
-          fecha: new Date().toISOString()
-        }]);
+          fecha: new Date().toISOString(),
+        },
+      ]);
 
       if (error) throw error;
 
@@ -751,7 +762,7 @@ export class UsuariosAutenticacionService {
     }
   }
 
-  async listarMedicosPaciente(idMedico: string){
+  async listarMedicosPaciente(idMedico: string) {
     try {
       const doctores = await this.findUserById(idMedico);
       if (doctores.usuarios.length == 0) {
@@ -780,7 +791,9 @@ export class UsuariosAutenticacionService {
         });
       }
 
-      const patientIds: string[] = (pmData || []).map((r: any) => r.idPaciente).filter(Boolean);
+      const patientIds: string[] = (pmData || [])
+        .map((r: any) => r.idPaciente)
+        .filter(Boolean);
 
       if (patientIds.length === 0) {
         return { ok: true, pacientes: [], count: 0 };
@@ -806,19 +819,16 @@ export class UsuariosAutenticacionService {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al consultar pacientes del médico',
+        message:
+          error.message || 'Error interno al consultar pacientes del médico',
       });
     }
   }
 
-
-
-  async totalUsuarios(){
+  async totalUsuarios() {
     try {
       // Obtener todos los perfiles con sus roles
-      const { data, error } = await this.supabase
-        .from('PERFIL')
-        .select('rol');
+      const { data, error } = await this.supabase.from('PERFIL').select('rol');
 
       if (error) {
         throw new RpcException({
@@ -828,21 +838,22 @@ export class UsuariosAutenticacionService {
       }
 
       // Contar por rol
-      const medicos = data?.filter(u => u.rol === 'medico').length || 0;
-      const pacientes = data?.filter(u => u.rol === 'paciente').length || 0;
-      const cuidadores = data?.filter(u => u.rol === 'cuidador').length || 0;
-      const administradores = data?.filter(u => u.rol === 'administrador').length || 0;
+      const medicos = data?.filter((u) => u.rol === 'medico').length || 0;
+      const pacientes = data?.filter((u) => u.rol === 'paciente').length || 0;
+      const cuidadores = data?.filter((u) => u.rol === 'cuidador').length || 0;
+      const administradores =
+        data?.filter((u) => u.rol === 'administrador').length || 0;
       const total = data?.length || 0;
 
       return {
         total,
         medicos,
         pacientes,
-        cuidadores
+        cuidadores,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
-      
+
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
         message: error.message || 'Error interno al contar usuarios',
@@ -850,6 +861,99 @@ export class UsuariosAutenticacionService {
     }
   }
 
+  async enviarOTP(email: string) {
+    const { error } = await this.supabase.auth.signInWithOtp({ email });
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al enviar OTP: ${error.message}`,
+      });
+    }
+
+    return { ok: true, message: 'Código OTP enviado al correo.' };
+  }
+
+  async verificarOtp(email: string, token: string) {
+    const { data, error } = await this.supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.UNAUTHORIZED,
+        message: `OTP inválido o expirado: ${error.message}`,
+      });
+    }
+
+    return {
+      ok: true,
+      message: 'OTP verificado correctamente.',
+      access_token: data.session?.access_token,
+      user: data.user,
+    };
+  }
+
+  async obtenerPerfil(token: string) {
+    try {
+      const supabase = createUserSupabaseClient(token);
+
+      // 1️⃣ Obtener usuario desde el token
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new RpcException('Token inválido o sesión expirada');
+      }
+
+      // 2️⃣ Buscar el perfil asociado
+      const { data: perfil, error: perfilError } = await supabase
+        .from('PERFIL')
+        .select('*')
+        .eq('idUsuario', user.id)
+        .single();
+
+      if (perfilError) {
+        throw new RpcException('Error obteniendo perfil: ' + perfilError.message);
+      }
+
+      return { status: 200, data: perfil };
+    } catch (error) {
+      throw new RpcException(error.message || 'Error interno al obtener perfil');
+    }
+  }
+
+  async actualizarPerfil(token: string, updates: Record<string, any>) {
+    const cliente = await withUserToken(this.supabase, token);
+    const { data, error } = await cliente.auth.updateUser(updates);
+
+    if (error) throw new Error(`Error actualizando usuario: ${error.message}`);
+    return data.user;
+  }
+
+  async eliminarCuenta(token: string) {
+    const cliente = await withUserToken(this.supabase, token);
+    const { data, error } = await cliente.auth.getUser();
+    if (error) throw new Error(`Error obteniendo usuario: ${error.message}`);
+
+    const { error: deleteError } = await cliente.auth.admin.deleteUser(
+      data.user.id,
+    );
+    if (deleteError)
+      throw new Error(`Error eliminando usuario: ${deleteError.message}`);
+
+    return { ok: true, message: 'Usuario eliminado correctamente' };
+  }
+
+  async cambiarContrasena(token: string, nuevaContrasena: string) {
+    const cliente = await withUserToken(this.supabase, token);
+    const { data, error } = await cliente.auth.updateUser({
+      password: nuevaContrasena,
+    });
+
+    if (error) throw new Error(`Error cambiando contraseña: ${error.message}`);
+    return data.user;
+  }
   // private validarRolCuidador(rol: string){
   //   throw new RpcException({
   //     status: HttpStatus.BAD_REQUEST,
