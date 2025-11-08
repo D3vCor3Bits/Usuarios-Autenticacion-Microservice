@@ -6,7 +6,7 @@ import { loginUsuarioDto } from './dto/login-usuario.dto';
 import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
-import { ActualizarUsuarioDto } from './dto/actualizar-usuario.dto';
+import { actualizarContraseñaDto } from './dto/actualizar-contraseña.dto';
 @Controller()
 export class UsuariosAutenticacionController {
   constructor(private readonly usuariosService: UsuariosAutenticacionService) {}
@@ -34,7 +34,7 @@ export class UsuariosAutenticacionController {
   /* @MessagePattern({ cmd: 'deleteUser' })
   borrar(@Payload() id: string) {
     return this.usuariosService.deleteUser(id);
-  } */  
+  } */
 
   @MessagePattern({ cmd: 'asignarMedpaciente' })
   asignarMedpaciente(@Payload() dto: asignarMedpacienteDto) {
@@ -98,4 +98,19 @@ export class UsuariosAutenticacionController {
   totalPacientes() {
     return this.usuariosService.totalUsuarios();
   }
+
+  /* @MessagePattern({ cmd: 'contraseña' })
+  actualizarContraseña(
+    (@Payload()  (dto: actualizarContraseñaDto; token: string)),
+  ) {
+    return this.usuariosService.actualizarContraseña(payload.dto, payload.token);
+  }*/
+  @MessagePattern({ cmd: 'contraseña' })
+  actualizarContraseña(
+    @Payload() payload: { password: string; token: string },
+  ) {
+    const { password, token } = payload;
+    return this.usuariosService.actualizarContraseña({ password }, token);
+  }
+  
 }

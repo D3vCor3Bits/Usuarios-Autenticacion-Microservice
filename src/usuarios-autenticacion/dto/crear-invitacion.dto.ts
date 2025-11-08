@@ -10,4 +10,6 @@ export class crearInvitacionDto {
     @IsString({ message: 'El rol debe ser una cadena de texto.' })
     rol: string;
 
+    @IsString({ message: 'El ID del médico que invita debe ser una cadena de texto.' })
+    idMedico: string;
 }
