@@ -9,7 +9,7 @@ import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { ActualizarUsuarioDto } from './dto/actualizar-usuario.dto';
 @Controller()
 export class UsuariosAutenticacionController {
-  constructor(private readonly usuariosService: UsuariosAutenticacionService) {}
+  constructor(private readonly usuariosService: UsuariosAutenticacionService) { }
   /* Agregar siempre objeto CMD. */
   @MessagePattern({ cmd: 'createUsuariosAutenticacion' })
   crear(@Payload() dto: CreateUsuariosAutenticacionDto) {
@@ -22,19 +22,19 @@ export class UsuariosAutenticacionController {
   }
 
   @MessagePattern({ cmd: 'findUsers' })
-  listar() {
-    return this.usuariosService.findAll();
+  listar(@Payload() data: { token: string }) {
+    return this.usuariosService.findAll(data.token);
   }
 
   @MessagePattern({ cmd: 'findUserById' })
-  buscar(@Payload('id', ParseUUIDPipe) id: string) {
-    return this.usuariosService.findUserById(id);
+  buscar(@Payload() data: { token: string; id: string }) {
+    return this.usuariosService.findUserById(data.token, data.id);
   }
 
   /* @MessagePattern({ cmd: 'deleteUser' })
   borrar(@Payload() id: string) {
     return this.usuariosService.deleteUser(id);
-  } */  
+  } */
 
   @MessagePattern({ cmd: 'asignarMedpaciente' })
   asignarMedpaciente(@Payload() dto: asignarMedpacienteDto) {
@@ -54,10 +54,8 @@ export class UsuariosAutenticacionController {
   }
 
   @MessagePattern({ cmd: 'pacienteMedico' })
-  buscarMedicoPaciente(
-    @Payload('idPaciente', ParseUUIDPipe) idPaciente: string,
-  ) {
-    return this.usuariosService.buscarMedicoPaciente(idPaciente);
+  buscarMedicoPaciente(@Payload() data: { token: string; idPaciente: string }) {
+    return this.usuariosService.buscarMedicoPaciente(data.token, data.idPaciente);
   }
 
   @MessagePattern({ cmd: 'crearInvitacion' })
@@ -90,8 +88,8 @@ export class UsuariosAutenticacionController {
   }
 
   @MessagePattern({ cmd: 'pacientesMedico' })
-  doctoresDeUnPaciente(@Payload('idMedico', ParseUUIDPipe) idMedico: string) {
-    return this.usuariosService.listarMedicosPaciente(idMedico);
+  listarPacientesMedico(@Payload() data: { token: string; idMedico: string }) {
+    return this.usuariosService.listarMedicosPaciente(data.token, data.idMedico);
   }
 
   @MessagePattern({ cmd: 'totalUsuarios' })
@@ -109,20 +107,10 @@ export class UsuariosAutenticacionController {
     return this.usuariosService.obtenerPerfil(token);
   }
 
-  @MessagePattern({ cmd: 'actualizarUsuario' })
-  actualizarUsuario({
-    token,
-    updates,
-  }: {
-    token: string;
-    updates: Record<string, any>;
-  }) {
-    return this.usuariosService.actualizarPerfil(token, updates);
-  }
 
-  @MessagePattern({ cmd: 'eliminarUsuario' })
+  @MessagePattern({ cmd: 'desactivarUsuario' })
   eliminarUsuario({ token }: { token: string }) {
-    return this.usuariosService.eliminarCuenta(token);
+    return this.usuariosService.desactivarUsuario(token);
   }
 
   @MessagePattern({ cmd: 'cambiarContrasena' })
@@ -134,6 +122,28 @@ export class UsuariosAutenticacionController {
     nuevaContrasena: string;
   }) {
     return this.usuariosService.cambiarContrasena(token, nuevaContrasena);
+  }
+
+
+  @MessagePattern({ cmd: 'cambiarCorreo' })
+  cambiarCorreo({
+    token,
+    nuevoCorreo,
+  }: {
+    token: string;
+    nuevoCorreo: string;
+  }) {
+    return this.usuariosService.cambiarCorreo(token, nuevoCorreo);
+  }
+  @MessagePattern({ cmd: 'uploadProfileImage' })
+  uploadProfileImage({
+    token,
+    imageUrl,
+  }: {
+    token: string;
+    imageUrl: string;
+  }) {
+    return this.usuariosService.uploadAvatar(token, imageUrl);
   }
 
   /*@MessagePattern('buscar_usuario')
