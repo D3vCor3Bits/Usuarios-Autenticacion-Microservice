@@ -20,5 +20,9 @@ export class CreateUsuariosAutenticacionDto {
   contrasenia: string;
 
   @IsString({ message: 'El rol debe ser una cadena de texto.' })
-  rol?: string; 
+  rol?: string;
+
+  @IsString({ message: 'El ID del médico debe ser una cadena de texto.' })
+  idMedico: string;
+ 
 }

@@ -122,7 +122,7 @@ export class UsuariosAutenticacionService {
 
   async crearPerfil(dto: CreateUsuariosAutenticacionDto, idUsuario: string) {
     try {
-      const { nombre, fechaNacimiento, status, correo, rol } = dto;
+      const { nombre, fechaNacimiento, status, correo, rol, idMedico } = dto;
 
       const { data, error } = await this.supabase
         .from('PERFIL')
@@ -135,7 +135,10 @@ export class UsuariosAutenticacionService {
           message: `Error al crear perfil: ${error.message}`,
         });
       }
-
+      if(rol === 'paciente'){
+        // Asignar médico al paciente si el rol es paciente
+        await this.asignMedicToPatient({idMedico: idMedico, idPaciente: idUsuario});
+      }
       return {
         ok: true,
         message: 'Perfil creado correctamente',
@@ -324,7 +327,7 @@ export class UsuariosAutenticacionService {
    */
   async crearInvitacion(dto: crearInvitacionDto) {
     try {
-      const { nombreCompleto, email, rol } = dto;
+      const { nombreCompleto, email, rol, idMedico } = dto;
       const correo = email;
 
       // Verificar si ya existe el correo en la tabla PERFIL
@@ -351,7 +354,7 @@ export class UsuariosAutenticacionService {
       // Insertar la invitación en la base de datos
       const { data, error } = await this.supabase
         .from('invitaciones')
-        .insert([{ correo, nombreCompleto, rol }])
+        .insert([{ correo, nombreCompleto, rol, idMedico }])
         .select();
 
       if (error) {
@@ -393,10 +396,10 @@ export class UsuariosAutenticacionService {
   // === Obtener invitación desde el token ===
   async obtenerInvitacionPorToken(token: string) {
     try {
-      // 1️⃣ Desencriptar el token para recuperar el ID original
+      // Desencriptar el token para recuperar el ID original
       const decodedId = this.decrypt(token);
 
-      // 2️⃣ Buscar invitación en Supabase
+      //  Buscar invitación en Supabase
       const { data, error } = await this.supabase
         .from('invitaciones')
         .select('*')
@@ -410,7 +413,7 @@ export class UsuariosAutenticacionService {
         });
       }
 
-      // 3️⃣ Retornar la invitación completa
+      //  Retornar la invitación completa
       return {
         ok: true,
         message: 'Invitación obtenida correctamente',
