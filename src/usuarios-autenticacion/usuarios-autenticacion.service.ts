@@ -337,7 +337,7 @@ export class UsuariosAutenticacionService {
       // Verificar si ya existe el correo en la tabla PERFIL
       const { data: registro, error: errorPerfil } = await this.supabase
         .from('PERFIL')
-        .select('id')
+        .select('idUsuario')
         .eq('correo', email)
         .single();
 
@@ -438,6 +438,7 @@ export class UsuariosAutenticacionService {
   
   Asignar un médico a un paciente.
   */
+  // ...existing code...
   async asignMedicToPatient(dto: asignarMedpacienteDto) {
     const { idMedico, idPaciente } = dto;
     const { data: rolMedData, error: errorMed } = await this.supabase
@@ -480,6 +481,48 @@ export class UsuariosAutenticacionService {
       });
     }
 
+    // === Nuevas validaciones opcionales ===
+    const MAX_MEDICOS_POR_PACIENTE = 3; // ajustar según política
+    const { count: medicosCount, error: countMedError } = await this.supabase
+      .from('PACIENTE_MEDICO')
+      .select('*', { count: 'exact', head: true })
+      .eq('idPaciente', idPaciente);
+
+    if (countMedError) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error contando médicos del paciente: ${countMedError.message}`,
+      });
+    }
+
+    if (medicosCount != null && medicosCount >= MAX_MEDICOS_POR_PACIENTE) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El paciente con id ${idPaciente} ya tiene ${MAX_MEDICOS_POR_PACIENTE} médicos asignados.`,
+      });
+    }
+
+    const MAX_PACIENTES_POR_MEDICO = 1000; // ajustar según política
+    const { count: pacientesCountMed, error: countPacMedError } = await this.supabase
+      .from('PACIENTE_MEDICO')
+      .select('*', { count: 'exact', head: true })
+      .eq('idMedico', idMedico);
+
+    if (countPacMedError) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error contando pacientes del médico: ${countPacMedError.message}`,
+      });
+    }
+
+    if (pacientesCountMed != null && pacientesCountMed >= MAX_PACIENTES_POR_MEDICO) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El médico con id ${idMedico} ya tiene ${MAX_PACIENTES_POR_MEDICO} pacientes asignados.`,
+      });
+    }
+    // === fin validaciones ===
+
     try {
       const { data, error } = await this.supabase
         .from('PACIENTE_MEDICO')
@@ -506,16 +549,9 @@ export class UsuariosAutenticacionService {
       });
     }
   }
-
-  /* 
-  
-  Asignar un cuidador a un paciente.
-  
-  */
   async asignCaregiverToPatient(dto: asignarCuidadorPacienteDto) {
     const { idCuidador, idPaciente } = dto;
 
-    // Verificación de roles
     const { data: rolCuidData, error: errorCuid } = await this.supabase
       .from('PERFIL')
       .select('rol')
@@ -556,7 +592,6 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    // Validación que el paciente no tenga más de 3 cuidadores
     const { count, error: countError } = await this.supabase
       .from('CUIDADOR_PACIENTE')
       .select('*', { count: 'exact', head: true })
@@ -576,7 +611,26 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    // Inserción de la relación cuidador-paciente
+    const MAX_PACIENTES_POR_CUIDADOR = 1;
+    const { count: pacientesCount, error: pacientesCountError } = await this.supabase
+      .from('CUIDADOR_PACIENTE')
+      .select('*', { count: 'exact', head: true })
+      .eq('idCuidador', idCuidador);
+
+    if (pacientesCountError) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error al contar pacientes del cuidador: ${pacientesCountError.message}`,
+      });
+    }
+
+    if (pacientesCount != null && pacientesCount >= MAX_PACIENTES_POR_CUIDADOR) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `El cuidador con id ${idCuidador} ya tiene ${MAX_PACIENTES_POR_CUIDADOR} pacientes asignados.`,
+      });
+    }
+
     try {
       const { data, error } = await this.supabase
         .from('CUIDADOR_PACIENTE')
@@ -894,4 +948,26 @@ export class UsuariosAutenticacionService {
 
     return data.user;
   }
+
+  async actualizarCorreo(payload: { email: string; token: string }) {
+  const { email, token } = payload;
+
+  // Crea el cliente Supabase autenticado temporalmente con ese token
+  const cliente = await withUserToken(this.supabase, token);
+
+  const { data, error } = await cliente.auth.updateUser({ email });
+
+  if (error) {
+    throw new RpcException({
+      status: HttpStatus.BAD_REQUEST,
+      message: `Error actualizando correo: ${error.message}`,
+    });
+  }
+
+  return {
+    message: 'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
+    user: data.user,
+  };
+}
+
 }
