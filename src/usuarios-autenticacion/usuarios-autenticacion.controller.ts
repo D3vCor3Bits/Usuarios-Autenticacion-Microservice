@@ -116,4 +116,9 @@ export class UsuariosAutenticacionController {
   actualizarCorreo(@Payload() payload: { email: string; token: string }) {
     return this.usuariosService.actualizarCorreo(payload);
   }
+
+  @MessagePattern({ cmd: 'findUsuariosSinRelacion' })
+  findUsuariosSinRelacion() {
+    return this.usuariosService.findUsuariosSinRelacion();
+  }
 }

@@ -481,8 +481,7 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    // === Nuevas validaciones opcionales ===
-    const MAX_MEDICOS_POR_PACIENTE = 3; // ajustar según política
+    const MAX_MEDICOS_POR_PACIENTE = 3;
     const { count: medicosCount, error: countMedError } = await this.supabase
       .from('PACIENTE_MEDICO')
       .select('*', { count: 'exact', head: true })
@@ -502,7 +501,6 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    const MAX_PACIENTES_POR_MEDICO = 1000; // ajustar según política
     const { count: pacientesCountMed, error: countPacMedError } = await this.supabase
       .from('PACIENTE_MEDICO')
       .select('*', { count: 'exact', head: true })
@@ -514,14 +512,6 @@ export class UsuariosAutenticacionService {
         message: `Error contando pacientes del médico: ${countPacMedError.message}`,
       });
     }
-
-    if (pacientesCountMed != null && pacientesCountMed >= MAX_PACIENTES_POR_MEDICO) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `El médico con id ${idMedico} ya tiene ${MAX_PACIENTES_POR_MEDICO} pacientes asignados.`,
-      });
-    }
-    // === fin validaciones ===
 
     try {
       const { data, error } = await this.supabase
@@ -969,5 +959,75 @@ export class UsuariosAutenticacionService {
     user: data.user,
   };
 }
+
+async findUsuariosSinRelacion() {
+  try {
+    const { data: relaciones } = await this.supabase
+      .from('CUIDADOR_PACIENTE')
+      .select('idPaciente, idCuidador');
+
+    const pacientesConCuidador = relaciones?.map(r => r.idPaciente) || [];
+    const cuidadoresConPaciente = relaciones?.map(r => r.idCuidador) || [];
+
+    // Pacientes sin cuidador
+    const { data: pacientes, error: errorPacientes } = await this.supabase
+      .from('PERFIL')
+      .select('idUsuario, nombre, correo')
+      .eq('rol', 'paciente')
+      .not(
+        'idUsuario',
+        'in',
+        `(${pacientesConCuidador.length > 0 ? pacientesConCuidador.map(id => `"${id}"`).join(',') : ''})`
+      );
+
+    if (errorPacientes) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al buscar pacientes sin cuidador: ${errorPacientes.message}`,
+      });
+    }
+
+    // Cuidadores sin paciente
+    const { data: cuidadores, error: errorCuidadores } = await this.supabase
+      .from('PERFIL')
+      .select('idUsuario, nombre, correo')
+      .eq('rol', 'cuidador')
+      .not(
+        'idUsuario',
+        'in',
+        `(${cuidadoresConPaciente.length > 0 ? cuidadoresConPaciente.map(id => `"${id}"`).join(',') : ''})`
+      );
+
+    if (errorCuidadores) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al buscar cuidadores sin paciente: ${errorCuidadores.message}`,
+      });
+    }
+
+    if ((!pacientes || pacientes.length === 0) && (!cuidadores || cuidadores.length === 0)) {
+      throw new RpcException({
+        status: HttpStatus.NOT_FOUND,
+        message: 'No hay pacientes o cuidadores sin relación actualmente',
+      });
+    }
+
+    return {
+      status: 'success',
+      message: 'Usuarios sin relación encontrados correctamente',
+      pacientesSinCuidador: pacientes || [],
+      cuidadoresSinPaciente: cuidadores || [],
+    };
+
+  } catch (error) {
+    if (error instanceof RpcException) throw error;
+
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: error.message || 'Error interno al consultar usuarios sin relación',
+    });
+  }
+}
+
 
 }
