@@ -9,17 +9,13 @@ import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { lastValueFrom } from 'rxjs';
 import { ClientProxy } from '@nestjs/microservices';
 import * as crypto from 'crypto';
-import { withUserToken } from 'src/common/helpers/supabase-token.helper';
-import { createUserSupabaseClient } from 'src/common/helpers/supabase-user.helper';
-import { stat } from 'fs';
-
 
 @Injectable()
 export class UsuariosAutenticacionService {
   constructor(
     @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
     @Inject('ALERTAS_SERVICE') private readonly clientProxy: ClientProxy,
-  ) { }
+  ) {}
 
   // === Encriptar ===
   private encrypt(text: string): string {
@@ -218,11 +214,9 @@ export class UsuariosAutenticacionService {
   /**
    * Retorna todos los usuarios registrados.
    */
-  async findAll(token: string) {
+  async findAll() {
     try {
-      const cliente = await withUserToken(this.supabase, token);
-
-      const { data, error } = await cliente.from('PERFIL').select('*');
+      const { data, error } = await this.supabase.from('PERFIL').select('*');
 
       if (error) {
         throw new RpcException({
@@ -241,25 +235,22 @@ export class UsuariosAutenticacionService {
 
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message:
-          error.message || 'Error interno al consultar los usuarios',
+        message: error.message || 'Error interno al consultar los usuarios',
       });
     }
   }
 
-  /**
-   * Encontrar perfil de usuario por ID
-   */
-  async findUserById(token: string, id: string) {
-    try {
-      const cliente = await withUserToken(this.supabase, token);
+  /* 
+  
+  Encontrar perfil de usuario por ID.
 
-      const { data, error } = await cliente
+  */
+  async findUserById(id: string) {
+    try {
+      const { data, error } = await this.supabase
         .from('PERFIL')
         .select('*')
-        .eq('idUsuario', id)
-        .single();
-
+        .eq('idUsuario', id);
 
       if (error) {
         throw new RpcException({
@@ -267,26 +258,23 @@ export class UsuariosAutenticacionService {
           message: `Error al buscar usuario: ${error.message}`,
         });
       }
-
-      if (!data) {
+      if (data.length == 0) {
         throw new RpcException({
           status: HttpStatus.NOT_FOUND,
           message: 'Usuario no encontrado',
         });
       }
-
       return {
         status: 'success',
-        message: 'Usuario encontrado correctamente',
-        usuario: data,
+        message: 'Usuario encontrados correctamente',
+        usuarios: data,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
 
       throw new RpcException({
         status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message:
-          error.message || 'Error interno al consultar el usuario',
+        message: error.message || 'Error interno al consultar los usuarios',
       });
     }
   }
@@ -422,6 +410,7 @@ export class UsuariosAutenticacionService {
         });
       }
 
+      // 3️⃣ Retornar la invitación completa
       return {
         ok: true,
         message: 'Invitación obtenida correctamente',
@@ -632,42 +621,31 @@ export class UsuariosAutenticacionService {
     }
   }
 
-  async buscarMedicoPaciente(token: string, idPaciente: string) {
-  const cliente = await withUserToken(this.supabase, token);
+  async buscarMedicoPaciente(idPaciente: string) {
+    const usuario = await this.findUserById(idPaciente);
+    this.validarRolPaciente(usuario.usuarios[0].rol);
+    try {
+      const { data: data, error: err } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('*')
+        .eq('idPaciente', idPaciente);
 
-  // Verificar rol del paciente
-  const usuario = await this.findUserById(token, idPaciente);
-  this.validarRolPaciente(usuario.usuario.rol);
+      if (err) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Algo sucedió buscando el id del médico',
+        });
+      }
+      const medico = await this.findUserById(data[0].idMedico);
 
-  try {
-    const { data, error } = await cliente
-      .from('PACIENTE_MEDICO')
-      .select('*')
-      .eq('idPaciente', idPaciente);
-
-    if (error) {
+      return medico.usuarios[0];
+    } catch (error) {
       throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: 'Error buscando la relación médico-paciente: ' + error.message,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error,
       });
     }
-
-    if (!data || data.length === 0) {
-      throw new RpcException({
-        status: HttpStatus.NOT_FOUND,
-        message: 'No se encontró médico asignado a este paciente',
-      });
-    }
-
-    const medico = await this.findUserById(token, data[0].idMedico);
-    return medico.usuario;
-  } catch (error) {
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: error.message || 'Error interno al buscar el médico del paciente',
-    });
   }
-}
 
   private validarRolPaciente(rol: string) {
     if (rol != 'paciente') {
@@ -781,57 +759,68 @@ export class UsuariosAutenticacionService {
     }
   }
 
-  async listarMedicosPaciente(token: string, idMedico: string) {
-  try {
-    const cliente = await withUserToken(this.supabase, token);
+  async listarMedicosPaciente(idMedico: string) {
+    try {
+      const doctores = await this.findUserById(idMedico);
+      if (doctores.usuarios.length == 0) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: 'No se pudo encontrar el usuario',
+        });
+      }
+      if (doctores.usuarios[0].rol != 'medico') {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Solo se admite id de un medico',
+        });
+      }
 
-    const medico = await this.findUserById(token, idMedico);
-    if (!medico || medico.usuario.rol !== 'medico') {
+      // Obtener sólo los idPaciente relacionados con el médico
+      const { data: pmData, error: pmError } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('idPaciente')
+        .eq('idMedico', idMedico);
+
+      if (pmError) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al buscar relaciones paciente-médico: ${pmError.message}`,
+        });
+      }
+
+      const patientIds: string[] = (pmData || [])
+        .map((r: any) => r.idPaciente)
+        .filter(Boolean);
+
+      if (patientIds.length === 0) {
+        return { ok: true, pacientes: [], count: 0 };
+      }
+
+      // Ahora traer los perfiles de los pacientes
+      const { data: pacientes, error: pacientesError } = await this.supabase
+        .from('PERFIL')
+        .select('*')
+        .in('idUsuario', patientIds);
+
+      if (pacientesError) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al traer perfiles de pacientes: ${pacientesError.message}`,
+        });
+      }
+
+      return {
+        pacientes: pacientes ?? [],
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
       throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: 'El ID proporcionado no corresponde a un médico',
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message:
+          error.message || 'Error interno al consultar pacientes del médico',
       });
     }
-
-    const { data: relaciones, error: relacionesError } = await cliente
-      .from('PACIENTE_MEDICO')
-      .select('idPaciente')
-      .eq('idMedico', idMedico);
-
-    if (relacionesError) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al buscar relaciones paciente-médico: ${relacionesError.message}`,
-      });
-    }
-
-    const patientIds = relaciones.map((r: any) => r.idPaciente).filter(Boolean);
-
-    if (patientIds.length === 0) {
-      return { ok: true, pacientes: [], count: 0 };
-    }
-
-    const { data: pacientes, error: pacientesError } = await cliente
-      .from('PERFIL')
-      .select('*')
-      .in('idUsuario', patientIds);
-
-    if (pacientesError) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al traer perfiles de pacientes: ${pacientesError.message}`,
-      });
-    }
-
-    return { ok: true, pacientes, count: pacientes.length };
-  } catch (error) {
-    if (error instanceof RpcException) throw error;
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: error.message || 'Error interno al consultar pacientes del médico',
-    });
   }
-}
 
   async totalUsuarios() {
     try {
@@ -868,197 +857,4 @@ export class UsuariosAutenticacionService {
       });
     }
   }
-
-  async enviarOTP(email: string) {
-    const { error } = await this.supabase.auth.signInWithOtp({ email });
-
-    if (error) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al enviar OTP: ${error.message}`,
-      });
-    }
-
-    return { ok: true, message: 'Código OTP enviado al correo.' };
-  }
-
-  async verificarOtp(email: string, token: string) {
-    const { data, error } = await this.supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email',
-    });
-
-    if (error) {
-      throw new RpcException({
-        status: HttpStatus.UNAUTHORIZED,
-        message: `OTP inválido o expirado: ${error.message}`,
-      });
-    }
-
-    return {
-      ok: true,
-      message: 'OTP verificado correctamente.',
-      access_token: data.session?.access_token,
-      user: data.user,
-    };
-  }
-
-  async obtenerPerfil(token: string) {
-    try {
-      const supabase = createUserSupabaseClient(token);
-
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new RpcException({
-          status: HttpStatus.BAD_REQUEST,
-          message: 'Token inválido o sesión expirada'
-        });
-      }
-
-      const { data: perfil, error: perfilError } = await supabase
-        .from('PERFIL')
-        .select('*')
-        .eq('idUsuario', user.id)
-        .single();
-
-      if (perfilError) {
-        throw new RpcException({
-          status: HttpStatus.BAD_REQUEST,
-          message: 'Error obteniendo perfil: ' + perfilError.message
-        });
-      }
-
-      return { status: 200, data: perfil };
-    } catch (error) {
-      throw new RpcException({
-
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al obtener perfil'
-      });
-    }
-  }
-
-  async actualizarPerfil(token: string, updates: Record<string, any>) {
-    const cliente = await withUserToken(this.supabase, token);
-    const { data, error } = await cliente.auth.updateUser(updates);
-
-    if (error) throw new Error(`Error actualizando usuario: ${error.message}`);
-    return data.user;
-  }
-
-  async desactivarUsuario(token: string) {
-    try {
-      const supabase = createUserSupabaseClient(token);
-
-      // Obtener usuario autenticado
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) {
-        throw new RpcException({
-          status: HttpStatus.UNAUTHORIZED,
-          message: userError?.message || 'Token inválido o sesión expirada',
-        });
-      }
-
-      // Actualizar el estado del perfil a "inactivo"
-      const { error: updateError } = await supabase
-        .from('PERFIL')
-        .update({ status: 'inactivo' })
-        .eq('idUsuario', user.id);
-
-      if (updateError) {
-        throw new RpcException({
-          status: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: updateError.message || 'Error actualizando estado del usuario',
-        });
-      }
-
-      return {
-        status: HttpStatus.OK,
-        message: 'Usuario desactivado correctamente',
-      };
-    } catch (error) {
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error interno al desactivar usuario',
-      });
-    }
-  }
-
-
-  async cambiarContrasena(token: string, nuevaContrasena: string) {
-    const cliente = await withUserToken(this.supabase, token);
-
-    const { data, error } = await cliente.auth.updateUser({
-      password: nuevaContrasena,
-    });
-
-    if (error) {
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error cambiando contraseña',
-      });
-    }
-
-    return data.user;
-  }
-
-  async uploadAvatar(token: string, avatarUrl: string) {
-    const cliente = await withUserToken(this.supabase, token);
-
-    const { data: userData, error: userError } = await cliente.auth.getUser();
-    if (userError) {
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: userError.message || 'Error obteniendo usuario',
-      });
-    }
-
-    const { data: perfilData, error: perfilError } = await cliente
-      .from('PERFIL')
-      .update({ avatarUrl })
-      .eq('idUsuario', userData.user.id)
-      .select()
-      .single();
-
-    if (perfilError) {
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: perfilError.message || 'Error actualizando perfil',
-      });
-    }
-
-    return perfilData;
-  }
-
-  async cambiarCorreo(token: string, nuevoCorreo: string) {
-    const cliente = await withUserToken(this.supabase, token);
-
-    const { data, error } = await cliente.auth.updateUser({
-      email: nuevoCorreo,
-    });
-
-    if (error) {
-      throw new RpcException({
-        status: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: error.message || 'Error cambiando correo electrónico',
-      });
-    }
-
-    return data.user;
-  }
-
-  // private validarRolCuidador(rol: string){
-  //   throw new RpcException({
-  //     status: HttpStatus.BAD_REQUEST,
-  //     message: "El rol de este usuario debe ser paciente"
-  //   })
-  // }
-
-  // private validarRolCuidador(rol: string){
-  //   throw new RpcException({
-  //     status: HttpStatus.BAD_REQUEST,
-  //     message: "El rol de este usuario debe ser paciente"
-  //   })
-  // }
 }
