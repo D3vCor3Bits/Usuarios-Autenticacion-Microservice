@@ -112,5 +112,8 @@ export class UsuariosAutenticacionController {
     const { password, token } = payload;
     return this.usuariosService.actualizarContraseña({ password }, token);
   }
-  
+  @MessagePattern({ cmd: 'actualizar-correo' })
+  actualizarCorreo(@Payload() payload: { email: string; token: string }) {
+    return this.usuariosService.actualizarCorreo(payload);
+  }
 }

@@ -894,4 +894,26 @@ export class UsuariosAutenticacionService {
 
     return data.user;
   }
+
+  async actualizarCorreo(payload: { email: string; token: string }) {
+  const { email, token } = payload;
+
+  // Crea el cliente Supabase autenticado temporalmente con ese token
+  const cliente = await withUserToken(this.supabase, token);
+
+  const { data, error } = await cliente.auth.updateUser({ email });
+
+  if (error) {
+    throw new RpcException({
+      status: HttpStatus.BAD_REQUEST,
+      message: `Error actualizando correo: ${error.message}`,
+    });
+  }
+
+  return {
+    message: 'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
+    user: data.user,
+  };
+}
+
 }
