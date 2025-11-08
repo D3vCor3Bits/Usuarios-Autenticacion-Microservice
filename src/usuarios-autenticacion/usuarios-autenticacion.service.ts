@@ -204,7 +204,6 @@ export class UsuariosAutenticacionService {
         access_token: data.session?.access_token,
         expires_in: data.session?.expires_in,
         user_id: userId,
-        session: data.session,
       };
     } catch (error) {
       if (error instanceof RpcException) throw error;
