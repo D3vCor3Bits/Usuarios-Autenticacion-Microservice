@@ -121,4 +121,8 @@ export class UsuariosAutenticacionController {
   findUsuariosSinRelacion() {
     return this.usuariosService.findUsuariosSinRelacion();
   }
+  @MessagePattern({ cmd: 'eliminarPacienteCuidador'})
+  eliminarPacienteCuidador(@Payload() dto: asignarCuidadorPacienteDto) {
+    return this.usuariosService.removePacienteFromCuidador(dto);
+  }
 }

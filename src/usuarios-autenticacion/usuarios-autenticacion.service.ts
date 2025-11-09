@@ -1030,4 +1030,34 @@ async findUsuariosSinRelacion() {
 }
 
 
+async removePacienteFromCuidador(dto: asignarCuidadorPacienteDto) {
+  try {
+    const { idCuidador, idPaciente } = dto;
+    const { error } = await this.supabase
+      .from('CUIDADOR_PACIENTE')
+      .delete()
+      .eq('idPaciente', idPaciente)
+      .eq('idCuidador', idCuidador);
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al eliminar relación cuidador-paciente: ${error.message}`,
+      });
+    }
+
+    return {
+      status: HttpStatus.OK,
+      message: 'Relación cuidador-paciente eliminada correctamente.',
+    };
+  } catch (error) {
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message:
+        error.message || 'Error interno al eliminar la relación cuidador-paciente.',
+    });
+  }
+}
+
+
 }
