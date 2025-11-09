@@ -1,0 +1,20 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t",
+        "us-east4-docker.pkg.dev/douremember-477701/douremember-registry/usuarios-autenticacion-ms",
+        "-f",
+        "dockerfile.prod" ,
+        "--platform=linux/amd64",
+        ".",
+      ]
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "push",
+        "us-east4-docker.pkg.dev/douremember-477701/douremember-registry/usuarios-autenticacion-ms",
+      ]
+options:
+  logging: CLOUD_LOGGING_ONLY
