@@ -125,4 +125,11 @@ export class UsuariosAutenticacionController {
   eliminarPacienteCuidador(@Payload() dto: asignarCuidadorPacienteDto) {
     return this.usuariosService.removePacienteFromCuidador(dto);
   }
+
+  
+  @MessagePattern({ cmd: 'cuentaInactiva' })
+  cuentaInactiva(@Payload('userId', ParseUUIDPipe) userId: string) {
+    return this.usuariosService.cuentaInactiva(userId);
+  }
 }
+

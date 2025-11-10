@@ -1084,6 +1084,41 @@ async removePacienteFromCuidador(dto: asignarCuidadorPacienteDto) {
     });
   }
 }
+async cuentaInactiva(userId: string) {
+  try {
+    const { data, error } = await this.supabase
+      .from('PERFIL')
+      .update({ status: 'inactivo' })
+      .eq('idUsuario', userId)
+      .select(); 
 
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error al inactivar usuario: ${error.message}`,
+      });
+    }
+
+    if (!data || data.length === 0) {
+      throw new RpcException({
+        status: HttpStatus.NOT_FOUND,
+        message: 'Usuario no encontrado en PERFIL.',
+      });
+    }
+
+    return {
+      message: 'Usuario inactivado correctamente.',
+      perfil: data[0],
+    };
+
+  } catch (err) {
+    if (err instanceof RpcException) throw err;
+
+    throw new RpcException({
+      status: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: `Error inesperado al inactivar usuario: ${err.message}`,
+    });
+  }
+}
 
 }
