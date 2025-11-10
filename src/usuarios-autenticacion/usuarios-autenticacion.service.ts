@@ -11,6 +11,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import * as crypto from 'crypto';
 import { withUserToken } from 'src/common/helpers/supabase-token.helper';
 import { actualizarContraseñaDto } from './dto/actualizar-contraseña.dto';
+import { subirImagenDto } from './dto/subir-imagen.dto';
 @Injectable()
 export class UsuariosAutenticacionService {
   constructor(
@@ -501,10 +502,11 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    const { count: pacientesCountMed, error: countPacMedError } = await this.supabase
-      .from('PACIENTE_MEDICO')
-      .select('*', { count: 'exact', head: true })
-      .eq('idMedico', idMedico);
+    const { count: pacientesCountMed, error: countPacMedError } =
+      await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('*', { count: 'exact', head: true })
+        .eq('idMedico', idMedico);
 
     if (countPacMedError) {
       throw new RpcException({
@@ -602,10 +604,11 @@ export class UsuariosAutenticacionService {
     }
 
     const MAX_PACIENTES_POR_CUIDADOR = 1;
-    const { count: pacientesCount, error: pacientesCountError } = await this.supabase
-      .from('CUIDADOR_PACIENTE')
-      .select('*', { count: 'exact', head: true })
-      .eq('idCuidador', idCuidador);
+    const { count: pacientesCount, error: pacientesCountError } =
+      await this.supabase
+        .from('CUIDADOR_PACIENTE')
+        .select('*', { count: 'exact', head: true })
+        .eq('idCuidador', idCuidador);
 
     if (pacientesCountError) {
       throw new RpcException({
@@ -614,7 +617,10 @@ export class UsuariosAutenticacionService {
       });
     }
 
-    if (pacientesCount != null && pacientesCount >= MAX_PACIENTES_POR_CUIDADOR) {
+    if (
+      pacientesCount != null &&
+      pacientesCount >= MAX_PACIENTES_POR_CUIDADOR
+    ) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: `El cuidador con id ${idCuidador} ya tiene ${MAX_PACIENTES_POR_CUIDADOR} pacientes asignados.`,
@@ -940,185 +946,344 @@ export class UsuariosAutenticacionService {
   }
 
   async actualizarCorreo(payload: { email: string; token: string }) {
-      const { email, token } = payload;
+    const { email, token } = payload;
 
-      // Crea cliente Supabase autenticado temporalmente con el token del usuario
-      const cliente = await withUserToken(this.supabase, token);
+    // Crea cliente Supabase autenticado temporalmente con el token del usuario
+    const cliente = await withUserToken(this.supabase, token);
 
-      // Actualiza el correo en auth.users
-      const { data, error } = await cliente.auth.updateUser({ email });
+    // Actualiza el correo en auth.users
+    const { data, error } = await cliente.auth.updateUser({ email });
+
+    if (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error actualizando correo: ${error.message}`,
+      });
+    }
+
+    // Obtén el ID del usuario autenticado desde el cliente
+    const userId = data.user?.id;
+
+    if (!userId) {
+      throw new RpcException({
+        status: HttpStatus.UNAUTHORIZED,
+        message: 'No se pudo obtener el ID del usuario autenticado.',
+      });
+    }
+
+    // Actualiza también el correo en tu tabla PERFIL
+    const { error: perfilError } = await this.supabase
+      .from('PERFIL')
+      .update({ correo: email })
+      .eq('idUsuario', userId);
+
+    if (perfilError) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: `Error actualizando correo en PERFIL: ${perfilError.message}`,
+      });
+    }
+
+    // Respuesta final
+    return {
+      message:
+        'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
+      user: data.user,
+    };
+  }
+
+  async findUsuariosSinRelacion() {
+    try {
+      const { data: relaciones } = await this.supabase
+        .from('CUIDADOR_PACIENTE')
+        .select('idPaciente, idCuidador');
+
+      const pacientesConCuidador = relaciones?.map((r) => r.idPaciente) || [];
+      const cuidadoresConPaciente = relaciones?.map((r) => r.idCuidador) || [];
+
+      // Pacientes sin cuidador
+      const { data: pacientes, error: errorPacientes } = await this.supabase
+        .from('PERFIL')
+        .select('idUsuario, nombre, correo')
+        .eq('rol', 'paciente')
+        .not(
+          'idUsuario',
+          'in',
+          `(${pacientesConCuidador.length > 0 ? pacientesConCuidador.map((id) => `"${id}"`).join(',') : ''})`,
+        );
+
+      if (errorPacientes) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al buscar pacientes sin cuidador: ${errorPacientes.message}`,
+        });
+      }
+
+      // Cuidadores sin paciente
+      const { data: cuidadores, error: errorCuidadores } = await this.supabase
+        .from('PERFIL')
+        .select('idUsuario, nombre, correo')
+        .eq('rol', 'cuidador')
+        .not(
+          'idUsuario',
+          'in',
+          `(${cuidadoresConPaciente.length > 0 ? cuidadoresConPaciente.map((id) => `"${id}"`).join(',') : ''})`,
+        );
+
+      if (errorCuidadores) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al buscar cuidadores sin paciente: ${errorCuidadores.message}`,
+        });
+      }
+
+      if (
+        (!pacientes || pacientes.length === 0) &&
+        (!cuidadores || cuidadores.length === 0)
+      ) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: 'No hay pacientes o cuidadores sin relación actualmente',
+        });
+      }
+
+      return {
+        status: 'success',
+        message: 'Usuarios sin relación encontrados correctamente',
+        pacientesSinCuidador: pacientes || [],
+        cuidadoresSinPaciente: cuidadores || [],
+      };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message:
+          error.message || 'Error interno al consultar usuarios sin relación',
+      });
+    }
+  }
+
+  async removePacienteFromCuidador(dto: asignarCuidadorPacienteDto) {
+    try {
+      const { idCuidador, idPaciente } = dto;
+      const { error } = await this.supabase
+        .from('CUIDADOR_PACIENTE')
+        .delete()
+        .eq('idPaciente', idPaciente)
+        .eq('idCuidador', idCuidador);
 
       if (error) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: `Error actualizando correo: ${error.message}`,
+          message: `Error al eliminar relación cuidador-paciente: ${error.message}`,
         });
       }
 
-      // Obtén el ID del usuario autenticado desde el cliente
-      const userId = data.user?.id;
-
-      if (!userId) {
-        throw new RpcException({
-          status: HttpStatus.UNAUTHORIZED,
-          message: 'No se pudo obtener el ID del usuario autenticado.',
-        });
-      }
-
-      // Actualiza también el correo en tu tabla PERFIL
-      const { error: perfilError } = await this.supabase
+      return {
+        status: HttpStatus.OK,
+        message: 'Relación cuidador-paciente eliminada correctamente.',
+      };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message:
+          error.message ||
+          'Error interno al eliminar la relación cuidador-paciente.',
+      });
+    }
+  }
+  async cuentaInactiva(userId: string) {
+    try {
+      const { data, error } = await this.supabase
         .from('PERFIL')
-        .update({ correo: email })
-        .eq('idUsuario', userId);
+        .update({ status: 'inactivo' })
+        .eq('idUsuario', userId)
+        .select();
 
-      if (perfilError) {
+      if (error) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: `Error actualizando correo en PERFIL: ${perfilError.message}`,
+          message: `Error al inactivar usuario: ${error.message}`,
         });
       }
 
-      // Respuesta final
+      if (!data || data.length === 0) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: 'Usuario no encontrado en PERFIL.',
+        });
+      }
+
       return {
-        message:
-          'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
-        user: data.user,
+        message: 'Usuario inactivado correctamente.',
+        perfil: data[0],
       };
-    }
+    } catch (err) {
+      if (err instanceof RpcException) throw err;
 
-async findUsuariosSinRelacion() {
-  try {
-    const { data: relaciones } = await this.supabase
-      .from('CUIDADOR_PACIENTE')
-      .select('idPaciente, idCuidador');
-
-    const pacientesConCuidador = relaciones?.map(r => r.idPaciente) || [];
-    const cuidadoresConPaciente = relaciones?.map(r => r.idCuidador) || [];
-
-    // Pacientes sin cuidador
-    const { data: pacientes, error: errorPacientes } = await this.supabase
-      .from('PERFIL')
-      .select('idUsuario, nombre, correo')
-      .eq('rol', 'paciente')
-      .not(
-        'idUsuario',
-        'in',
-        `(${pacientesConCuidador.length > 0 ? pacientesConCuidador.map(id => `"${id}"`).join(',') : ''})`
-      );
-
-    if (errorPacientes) {
       throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al buscar pacientes sin cuidador: ${errorPacientes.message}`,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error inesperado al inactivar usuario: ${err.message}`,
       });
     }
-
-    // Cuidadores sin paciente
-    const { data: cuidadores, error: errorCuidadores } = await this.supabase
-      .from('PERFIL')
-      .select('idUsuario, nombre, correo')
-      .eq('rol', 'cuidador')
-      .not(
-        'idUsuario',
-        'in',
-        `(${cuidadoresConPaciente.length > 0 ? cuidadoresConPaciente.map(id => `"${id}"`).join(',') : ''})`
-      );
-
-    if (errorCuidadores) {
-      throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al buscar cuidadores sin paciente: ${errorCuidadores.message}`,
-      });
-    }
-
-    if ((!pacientes || pacientes.length === 0) && (!cuidadores || cuidadores.length === 0)) {
-      throw new RpcException({
-        status: HttpStatus.NOT_FOUND,
-        message: 'No hay pacientes o cuidadores sin relación actualmente',
-      });
-    }
-
-    return {
-      status: 'success',
-      message: 'Usuarios sin relación encontrados correctamente',
-      pacientesSinCuidador: pacientes || [],
-      cuidadoresSinPaciente: cuidadores || [],
-    };
-
-  } catch (error) {
-    if (error instanceof RpcException) throw error;
-
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: error.message || 'Error interno al consultar usuarios sin relación',
-    });
   }
-}
 
+  async subirImagenPerfil(dto: subirImagenDto) {
+    const { idUsuario, avatarUrl } = dto;
 
-async removePacienteFromCuidador(dto: asignarCuidadorPacienteDto) {
-  try {
-    const { idCuidador, idPaciente } = dto;
-    const { error } = await this.supabase
-      .from('CUIDADOR_PACIENTE')
-      .delete()
-      .eq('idPaciente', idPaciente)
-      .eq('idCuidador', idCuidador);
+    try {
+      const { data: usuario, error: errorBusqueda } = await this.supabase
+        .from('PERFIL')
+        .select('idUsuario')
+        .eq('idUsuario', idUsuario)
+        .maybeSingle();
 
-    if (error) {
+      if (errorBusqueda) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al verificar usuario: ${errorBusqueda.message}`,
+        });
+      }
+
+      if (!usuario) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: `No se encontró ningún perfil con el idUsuario proporcionado.`,
+        });
+      }
+
+      const { error: errorUpdate } = await this.supabase
+        .from('PERFIL')
+        .update({ avatarUrl })
+        .eq('idUsuario', idUsuario);
+
+      if (errorUpdate) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al subir imagen de perfil: ${errorUpdate.message}`,
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Imagen de perfil actualizada correctamente',
+      };
+    } catch (err) {
+      if (err instanceof RpcException) throw err;
+
       throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al eliminar relación cuidador-paciente: ${error.message}`,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error inesperado al subir la imagen: ${err.message}`,
       });
     }
-
-    return {
-      status: HttpStatus.OK,
-      message: 'Relación cuidador-paciente eliminada correctamente.',
-    };
-  } catch (error) {
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message:
-        error.message || 'Error interno al eliminar la relación cuidador-paciente.',
-    });
   }
-}
-async cuentaInactiva(userId: string) {
-  try {
-    const { data, error } = await this.supabase
-      .from('PERFIL')
-      .update({ status: 'inactivo' })
-      .eq('idUsuario', userId)
-      .select(); 
 
-    if (error) {
+  async actualizarFotoPerfil(dto: subirImagenDto) {
+    const { idUsuario, avatarUrl } = dto;
+
+    try {
+      // 🔎 1️⃣ Verificar si el usuario existe
+      const { data: usuario, error: errorBusqueda } = await this.supabase
+        .from('PERFIL')
+        .select('idUsuario')
+        .eq('idUsuario', idUsuario)
+        .maybeSingle();
+
+      if (errorBusqueda) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al verificar existencia del usuario: ${errorBusqueda.message}`,
+        });
+      }
+
+      if (!usuario) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: `No existe un perfil con el idUsuario proporcionado.`,
+        });
+      }
+
+      const { error: errorUpdate } = await this.supabase
+        .from('PERFIL')
+        .update({ avatarUrl })
+        .eq('idUsuario', idUsuario);
+
+      if (errorUpdate) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al actualizar la foto de perfil: ${errorUpdate.message}`,
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Foto de perfil actualizada correctamente',
+        data: {
+          idUsuario,
+          avatarUrl,
+        },
+      };
+    } catch (err) {
+      if (err instanceof RpcException) throw err;
+
       throw new RpcException({
-        status: HttpStatus.BAD_REQUEST,
-        message: `Error al inactivar usuario: ${error.message}`,
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error inesperado al actualizar la foto de perfil: ${err.message}`,
       });
     }
-
-    if (!data || data.length === 0) {
-      throw new RpcException({
-        status: HttpStatus.NOT_FOUND,
-        message: 'Usuario no encontrado en PERFIL.',
-      });
-    }
-
-    return {
-      message: 'Usuario inactivado correctamente.',
-      perfil: data[0],
-    };
-
-  } catch (err) {
-    if (err instanceof RpcException) throw err;
-
-    throw new RpcException({
-      status: HttpStatus.INTERNAL_SERVER_ERROR,
-      message: `Error inesperado al inactivar usuario: ${err.message}`,
-    });
   }
-}
+  async eliminarFotoPerfil(idUsuario: string) {
+    try {
+      // 🔎 1️⃣ Verificar si el usuario existe
+      const { data: usuario, error: errorBusqueda } = await this.supabase
+        .from('PERFIL')
+        .select('idUsuario')
+        .eq('idUsuario', idUsuario)
+        .maybeSingle();
 
+      if (errorBusqueda) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al verificar existencia del usuario: ${errorBusqueda.message}`,
+        });
+      }
+
+      if (!usuario) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: `No existe un perfil con el idUsuario proporcionado.`,
+        });
+      }
+
+      // 🗑️ 2️⃣ Eliminar la foto (dejar avatarUrl en null)
+      const { error: errorDelete } = await this.supabase
+        .from('PERFIL')
+        .update({ avatarUrl: null })
+        .eq('idUsuario', idUsuario);
+
+      if (errorDelete) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error al eliminar la foto de perfil: ${errorDelete.message}`,
+        });
+      }
+
+      // ✅ 3️⃣ Respuesta de éxito
+      return {
+        success: true,
+        message: 'Foto de perfil eliminada correctamente',
+        data: {
+          idUsuario,
+        },
+      };
+    } catch (err) {
+      if (err instanceof RpcException) throw err;
+
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: `Error inesperado al eliminar la foto de perfil: ${err.message}`,
+      });
+    }
+  }
 }

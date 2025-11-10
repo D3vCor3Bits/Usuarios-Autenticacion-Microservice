@@ -7,6 +7,7 @@ import { asignarMedpacienteDto } from './dto/asignar-medpaciente.dto';
 import { asignarCuidadorPacienteDto } from './dto/asignar-pacientecuidador.dto';
 import { crearInvitacionDto } from './dto/crear-invitacion.dto';
 import { actualizarContraseñaDto } from './dto/actualizar-contraseña.dto';
+import { subirImagenDto } from './dto/subir-imagen.dto';
 @Controller()
 export class UsuariosAutenticacionController {
   constructor(private readonly usuariosService: UsuariosAutenticacionService) {}
@@ -131,5 +132,21 @@ export class UsuariosAutenticacionController {
   cuentaInactiva(@Payload('userId', ParseUUIDPipe) userId: string) {
     return this.usuariosService.cuentaInactiva(userId);
   }
+
+  @MessagePattern({cmd : 'imagenPerfil'})
+  subirImagenPerfil(@Payload() dto: subirImagenDto) {
+    return this.usuariosService.subirImagenPerfil(dto);
+  }
+
+  @MessagePattern({cmd : 'actualizarImagenPerfil'})
+  actualizarImagenPerfil(@Payload() dto: subirImagenDto) {
+    return this.usuariosService.actualizarFotoPerfil(dto);
+  }
+
+  @MessagePattern({cmd   : 'eliminarFotoPerfil'})
+  eliminarFotoPerfil(@Payload('userId', ParseUUIDPipe) userId: string) {
+    return this.usuariosService.eliminarFotoPerfil(userId);
+  }
 }
+
 
