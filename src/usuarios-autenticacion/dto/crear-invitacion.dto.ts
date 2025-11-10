@@ -1,4 +1,4 @@
-import { IsEmail, IsString } from 'class-validator';
+import { IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class crearInvitacionDto {
     @IsString({ message: 'El nombre debe ser una cadena de texto.' })
@@ -10,6 +10,7 @@ export class crearInvitacionDto {
     @IsString({ message: 'El rol debe ser una cadena de texto.' })
     rol: string;
 
+    @IsOptional()
     @IsString({ message: 'El ID del médico que invita debe ser una cadena de texto.' })
     idMedico: string;
 }
