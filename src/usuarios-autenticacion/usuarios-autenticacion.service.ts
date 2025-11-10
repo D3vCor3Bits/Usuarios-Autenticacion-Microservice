@@ -940,25 +940,51 @@ export class UsuariosAutenticacionService {
   }
 
   async actualizarCorreo(payload: { email: string; token: string }) {
-  const { email, token } = payload;
+      const { email, token } = payload;
 
-  // Crea el cliente Supabase autenticado temporalmente con ese token
-  const cliente = await withUserToken(this.supabase, token);
+      // Crea cliente Supabase autenticado temporalmente con el token del usuario
+      const cliente = await withUserToken(this.supabase, token);
 
-  const { data, error } = await cliente.auth.updateUser({ email });
+      // Actualiza el correo en auth.users
+      const { data, error } = await cliente.auth.updateUser({ email });
 
-  if (error) {
-    throw new RpcException({
-      status: HttpStatus.BAD_REQUEST,
-      message: `Error actualizando correo: ${error.message}`,
-    });
-  }
+      if (error) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error actualizando correo: ${error.message}`,
+        });
+      }
 
-  return {
-    message: 'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
-    user: data.user,
-  };
-}
+      // Obtén el ID del usuario autenticado desde el cliente
+      const userId = data.user?.id;
+
+      if (!userId) {
+        throw new RpcException({
+          status: HttpStatus.UNAUTHORIZED,
+          message: 'No se pudo obtener el ID del usuario autenticado.',
+        });
+      }
+
+      // Actualiza también el correo en tu tabla PERFIL
+      const { error: perfilError } = await this.supabase
+        .from('PERFIL')
+        .update({ correo: email })
+        .eq('idUsuario', userId);
+
+      if (perfilError) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Error actualizando correo en PERFIL: ${perfilError.message}`,
+        });
+      }
+
+      // Respuesta final
+      return {
+        message:
+          'Correo actualizado correctamente. Si tienes verificación activa, revisa tu bandeja.',
+        user: data.user,
+      };
+    }
 
 async findUsuariosSinRelacion() {
   try {
