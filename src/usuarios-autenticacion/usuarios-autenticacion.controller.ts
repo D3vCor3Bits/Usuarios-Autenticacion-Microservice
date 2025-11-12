@@ -147,6 +147,13 @@ export class UsuariosAutenticacionController {
   eliminarFotoPerfil(@Payload('userId', ParseUUIDPipe) userId: string) {
     return this.usuariosService.eliminarFotoPerfil(userId);
   }
+
+  @MessagePattern({cmd   : 'medicoPaciente'})
+  traerPacientesdeMedico(
+    @Payload('idPaciente', ParseUUIDPipe) idPaciente: string,
+  ) {
+    return this.usuariosService.medicoPaciente(idPaciente);
+  }
 }
 
 

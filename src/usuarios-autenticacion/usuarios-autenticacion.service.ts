@@ -655,6 +655,25 @@ export class UsuariosAutenticacionService {
     }
   }
 
+  async medicoPaciente(idMedico: string) {
+    try {
+      const { data: data, error: err } = await this.supabase
+        .from('PACIENTE_MEDICO')
+        .select('idPaciente')
+        .eq('idMedico', idMedico);
+      if (err) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Algo sucedió buscando los pacientes del médico',
+        });
+      }
+  } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.INTERNAL_SERVER_ERROR,
+        message: error.message,
+      });
+    }
+}
   async buscarPacienteCuidador(idCuidador: string) {
     try {
       const { data: data, error: err } = await this.supabase
