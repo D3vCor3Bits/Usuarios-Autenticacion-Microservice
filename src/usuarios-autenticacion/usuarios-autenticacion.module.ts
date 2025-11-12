@@ -3,6 +3,7 @@ import { UsuariosAutenticacionService } from './usuarios-autenticacion.service';
 import { UsuariosAutenticacionController } from './usuarios-autenticacion.controller';
 import { SupabaseModule } from 'src/common/supabase.module';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { envs } from 'src/config';
 
 
 @Module({
@@ -13,7 +14,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         name: 'ALERTAS_SERVICE', 
         transport: Transport.NATS, 
         options: {
-          servers: ['nats://localhost:4222'], 
+          servers: envs.natsServers, 
         },
       },
     ]),
